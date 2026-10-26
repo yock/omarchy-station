@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "id": "myockey.station",
+  "name": "Station",
+  "version": "0.1.0",
+  "author": "myockey",
+  "license": "MIT",
+  "description": "Station readiness for digital-mode operators: time sync, CAT control and radio audio at a glance, with a green/amber/red bar indicator.",
+  "keywords": [
+    "ham radio",
+    "amateur radio",
+    "station",
+    "cat",
+    "rigctld",
+    "gps",
+    "chrony",
+    "audio",
+    "readiness",
+    "bar",
+    "quickshell"
+  ],
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Station",
+    "description": "Green/amber/red station readiness: time sync, CAT and radio audio.",
+    "category": "System",
+    "aliases": [
+      "station",
+      "ham",
+      "radio",
+      "readiness",
+      "cat",
+      "time sync"
+    ],
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "refreshIntervalSec": 5
+    },
+    "schema": [
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "Readiness refresh interval (seconds)",
+        "min": 1,
+        "max": 60,
+        "step": 1,
+        "defaultValue": 5
+      }
+    ]
+  }
+}
