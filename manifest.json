@@ -51,6 +51,18 @@
         "max": 60,
         "step": 1,
         "defaultValue": 5
+      },
+      {
+        "key": "radioRxNode",
+        "type": "string",
+        "label": "Radio RX node name",
+        "defaultValue": ""
+      },
+      {
+        "key": "radioTxNode",
+        "type": "string",
+        "label": "Radio TX node name",
+        "defaultValue": ""
       }
     ]
   }

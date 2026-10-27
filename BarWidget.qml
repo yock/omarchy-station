@@ -8,16 +8,45 @@ import "Readiness.js" as Readiness
 // The dot is always present; grey means "not probed yet", green means all
 // checks are ready, amber means attention, red means the station is not ready.
 //
-// The probe layer will replace `readiness` as a whole. Keeping one snapshot
-// object means the bar, tooltip and panel cannot disagree mid-update.
+// The probe layer replaces `readiness` as a whole. Keeping one snapshot object
+// means the bar, tooltip and panel cannot disagree mid-update.
 BarWidget {
   id: root
   moduleName: "myockey.station"
 
-  property var readiness: Readiness.emptySnapshot()
+  // Time and CAT are still stubbed as unknown (#1); radio audio is live.
+  readonly property var readiness: {
+    var snapshot = Readiness.emptySnapshot()
+    snapshot.audio = audioProbe.check
+    return snapshot
+  }
+
+  readonly property var audioCandidates: audioProbe.candidates
 
   readonly property string overallState: Readiness.overall(readiness)
   readonly property color overallColor: Readiness.color(overallState)
+
+  // Two roles, one node each, stored as PipeWire node.name in this widget's
+  // shell.json entry. Update the whole entry: updateEntryInline replaces it,
+  // and an omitted key would be a deletion.
+  function assignAudio(role, name) {
+    var key = Readiness.audioSettingKey(role)
+    var entry = { id: root.moduleName }
+    for (var existing in root.settings) if (existing !== "id") entry[existing] = root.settings[existing]
+    entry[key] = String(name || "")
+
+    // Applied locally first so the check changes on the click itself. Without
+    // a writable bar entry the choice lives only for this session.
+    root.settings = entry
+    if (root.bar && root.bar.shell && typeof root.bar.shell.updateEntryInline === "function")
+      root.bar.shell.updateEntryInline(root.moduleName, entry)
+  }
+
+  AudioProbe {
+    id: audioProbe
+    rxName: root.setting("radioRxNode", "")
+    txName: root.setting("radioTxNode", "")
+  }
 
   // The glyph is drawn (StationGlyph.qml), not set in an icon font. 18px is
   // the optical canvas it was tuned on: big enough for the arcs to separate
@@ -32,6 +61,7 @@ BarWidget {
     if ("anchorItem" in target) target.anchorItem = button
     if ("hostWidget" in target) target.hostWidget = root
     if ("readiness" in target) target.readiness = root.readiness
+    if ("audioCandidates" in target) target.audioCandidates = root.audioCandidates
   }
 
   function refresh() {
@@ -66,6 +96,8 @@ BarWidget {
   onBarChanged: injectPanel()
   onSettingsChanged: injectPanel()
   onReadinessChanged: injectPanel()
+  // Node enumeration can change the picker's rows without changing the check.
+  onAudioCandidatesChanged: injectPanel()
 
   Loader {
     id: panelLoader

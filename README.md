@@ -4,9 +4,9 @@ A station-readiness widget for [Omarchy](https://omarchy.org/) 4.x. One drawn
 station glyph — a mast with a tip ball and signal arcs — and a small
 green/amber/red dot; click it for the expanded readiness panel.
 
-This repository is a **skeleton**. The status model, bar indicator and expanded
-panel are in place; the three probes are deliberately stubbed as `unknown` so
-the next step is wiring, not untangling placeholder logic.
+Radio audio is wired: the panel reports the two assigned PipeWire nodes and
+edits the assignments inline. Time sync and CAT control are still stubbed as
+`unknown` (#1), so the panel stays honest about what it has not probed.
 
 ## Readiness model
 
@@ -25,7 +25,7 @@ The overall state is the worst of the three:
 - **Red** — at least one check failed
 - **Grey** — not probed yet / incomplete data
 
-The dot is intentionally always visible. Grey is an honest "not wired yet"
+The dot is intentionally always visible. Grey is an honest "cannot answer yet"
 state rather than a fake green.
 
 ## Presentation
@@ -33,7 +33,9 @@ state rather than a fake green.
 The expanded panel is a verdict line over a three-column readout: time source,
 frequency and the assigned radio, each with a coloured rule underneath. Time
 leads with its source rather than an offset, because a clock's variance is not a
-readiness signal. The bar keeps the station glyph and a single dot.
+readiness signal; radio audio leads with the assigned Radio RX node, so a
+failure still says which node is missing. The bar keeps the station glyph and a
+single dot.
 
 The glyph is drawn in QML (`StationGlyph.qml`) rather than set in an icon font.
 That keeps it legible at the bar's 18px optical canvas — the Nerd Font tower and
@@ -51,17 +53,43 @@ lives on the `prototype/station-panel` branch.
 omarchy-station/
 ├── manifest.json          # plugin id: myockey.station, kind: bar-widget
 ├── BarWidget.qml          # station glyph, readiness dot, panel loader, IPC
+├── AudioProbe.qml         # PipeWire presence, mute and default-output facts
 ├── StationGlyph.qml       # the drawn mast glyph
-├── Panel.qml              # expanded readiness panel
-├── Readiness.js           # pure state model and aggregation
-├── test/readiness-test.js # node test for the aggregation rules
+├── Panel.qml              # expanded readiness panel and assignment picker
+├── Readiness.js           # pure state model, audio ladder, codec ranking
+├── test/readiness-test.js # node tests for the model and audio ladder
 ├── README.md
 └── LICENSE
 ```
 
-`Readiness.js` has no Qt types, so the same aggregation rules are testable
-under Node. The QML side only renders a snapshot; replacing the whole snapshot
-keeps the bar, tooltip and panel consistent.
+`Readiness.js` has no Qt types, so the same aggregation rules, the radio
+audio ladder and the codec ranking are testable under Node. The QML side only
+renders a snapshot; replacing the whole snapshot keeps the bar, tooltip and
+panel consistent.
+
+## Radio audio assignments
+
+Two roles, one node each, stored as PipeWire `node.name` in this widget's
+`shell.json` entry: `radioRxNode` (a non-stream audio source) and
+`radioTxNode` (a non-stream audio sink). Click the radio column in the panel,
+or press `a`, to open the inline picker; it lists source and sink candidates
+ranked by codec family — radio-class, other USB audio, then onboard analog —
+with Clear and Done rows. Up/Down move, Enter assigns, and Escape collapses the
+picker before it closes the panel. Only nodes present right now are listed, and
+nothing binds without an explicit choice.
+
+A station can also be pre-configured from the CLI:
+
+```bash
+omarchy bar set myockey.station radioRxNode alsa_input.usb-codec-00.mono-fallback
+omarchy bar set myockey.station radioTxNode alsa_output.usb-codec-00.analog-stereo
+```
+
+The picker persists through `bar.shell.updateEntryInline`, rebuilding the whole
+entry from the current settings because that call replaces it. With no writable
+bar entry the choice stays session-only. An unassigned role reads `unknown`, not
+green: every digital-mode station needs an audio path. A vanished assignment
+fails and is never rebound automatically.
 
 ## Validate
 
@@ -78,7 +106,7 @@ QML lint (Qt 6):
 tmp=$(mktemp -d)
 ln -s /usr/share/omarchy/shell "$tmp/qs"
 /usr/lib/qt6/bin/qmllint -I "$tmp" -I /usr/lib/qt6/qml \
-  BarWidget.qml StationGlyph.qml Panel.qml
+  BarWidget.qml AudioProbe.qml StationGlyph.qml Panel.qml
 rm -rf "$tmp"
 ```
 
@@ -122,12 +150,9 @@ Remove it with `omarchy plugin remove myockey.station --yes` when you are done.
    power are TX-only, model-specific and calibration-dependent: read them only
    as a last-TX diagnostic if the rig reports them, and never let them affect
    readiness.
-3. **Audio** — assign one PipeWire source to **Radio RX** and one sink to
-   **Radio TX**, with candidates ranked by codec family (C-Media, TI PCM290x,
-   West Mountain) rather than by model, because a Digirig, an IC-7300 and a
-   SignaLink all announce "USB Audio CODEC". Report node presence, mute, and
-   Radio TX being the system default output. Use Quickshell's native PipeWire
-   service; suspend, sample rate, levels and signal presence are never
+3. **Audio** — done, against ADR 0002. Node presence, mute and Radio TX being
+   the system default output drive the check through Quickshell's native
+   PipeWire service; suspend, sample rate, levels and signal presence are never
    readiness signals. Stations with a hardware TNC have no host audio path at
    all and are designed separately (#4).
 

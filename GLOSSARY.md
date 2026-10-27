@@ -27,8 +27,8 @@ The one-line overall readiness statement at the top of the expanded panel.
 _Avoid_: headline, status.
 
 **Readout**:
-The primary value in a check's panel column: time source, frequency, or sample
-rate. _Avoid_: metric, value.
+The primary value in a check's panel column: time source, frequency, or the
+assigned radio node. _Avoid_: metric, value.
 
 **Time source**:
 The reference that disciplines the host clock: GPS/PPS, NTP, or none. A source
