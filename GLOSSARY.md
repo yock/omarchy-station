@@ -44,8 +44,8 @@ serial device that looks present, is not a fix. _Avoid_: GPS lock, GPS presence.
 
 **Source health**:
 How far the configured time source has got, reported as the most specific rung:
-no device, daemon not running, no fix, fix without PPS, ready but not selected,
-or disciplining the clock. _Avoid_: GPS status.
+package not installed, no device, daemon not running, no fix, fix without PPS,
+ready but not selected, or disciplining the clock. _Avoid_: GPS status.
 
 **GPS mode**:
 The station's setting for whether GPS timing is expected: `off` (no GPS, NTP is

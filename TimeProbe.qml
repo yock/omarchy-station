@@ -65,7 +65,13 @@ ProbedCheck {
     root.pending.gps.missing = Readiness.gpsConfigFacts(value).missing
   }
 
-  function applyGpsReport(value) {
+  // 127 is the shell saying gpspipe is not installed: the package is missing,
+  // not the daemon. Nothing was observed, so keep the neutral facts.
+  function applyGpsReport(value, exitCode) {
+    if (exitCode === 127) {
+      root.pending.gps.installed = false
+      return
+    }
     var parsed = Readiness.gpsReportFacts(value)
     root.pending.gps.gpsd = parsed.gpsd
     root.pending.gps.devices = parsed.devices
@@ -194,7 +200,7 @@ ProbedCheck {
     }
     stderr: StdioCollector { id: gpsErr; waitForEnd: true }
     onExited: function(exitCode) {
-      root.applyGpsReport(gpsOut.text || root.gpsText)
+      root.applyGpsReport(gpsOut.text || root.gpsText, exitCode)
       root.finish()
     }
   }

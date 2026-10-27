@@ -397,6 +397,16 @@ assert.equal(gpsdDown.readout, "NTP")
 assert.equal(gpsdDown.detail, "gpsd not running")
 assert.equal(gpsdDown.meta, "GPS lost")
 
+// A missing gpspipe is not the same as a stopped daemon: the package is not
+// installed, and that is what the operator has to fix.
+const gpsdMissing = R.timeCheck(timeInput({
+  gpsMode: "optional",
+  gps: { gpsd: false, installed: false }
+}))
+assert.equal(gpsdMissing.state, R.WARN)
+assert.equal(gpsdMissing.detail, "gpsd is not installed")
+assert.equal(gpsdMissing.meta, "GPS lost")
+
 // A configured device that is not there is more specific than a daemon that
 // is not running, so it is reported first.
 const noDevice = R.timeCheck(timeInput({

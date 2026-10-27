@@ -90,7 +90,8 @@ function notProbed() {
 //   daemon      "chrony" | "timesyncd" | "none"
 //   synced      the clock is being disciplined right now
 //   server      the reference carrying the clock, "" when there is none
-//   gps         { gpsd, missing, devices, mode, satellites, pps, selected }
+//   gps         { gpsd, installed, missing, devices, mode, satellites, pps,
+//                 selected }
 //
 // Rungs, most specific first: no device, gpsd not running, no fix, fix
 // without PPS, ready but not selected, disciplining. A fix never forces the
@@ -122,6 +123,7 @@ function timeFacts() {
     server: "",
     gps: {
       gpsd: false,
+      installed: true,
       missing: false,
       devices: 0,
       mode: 0,
@@ -180,12 +182,15 @@ function timeCheck(input) {
   var lostMeta = TIME_GPS_LOST + satelliteMeta(gps)
   var policy = required ? WARN : OK
 
-  // A configured device that is gone is more specific than a daemon that is
-  // not running, so the device rung is first.
-  if (gps.gpsd !== true)
+  // A missing package outranks every other source rung: nothing else can be
+  // reached until it is installed. Then a configured device that is gone is
+  // more specific than a daemon that is not running.
+  if (gps.gpsd !== true) {
+    if (gps.installed === false) return check(WARN, readout, "gpsd is not installed", lostMeta)
     return gps.missing === true
       ? check(WARN, readout, "no GPS device", lostMeta)
       : check(WARN, readout, "gpsd not running", lostMeta)
+  }
 
   // gpsd's own receiver list is authoritative while it is up.
   if (gps.devices === 0)

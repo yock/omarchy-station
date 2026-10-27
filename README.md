@@ -82,9 +82,10 @@ mode and the satellite count, and `chronyc -n sources` says whether a PPS
 refclock exists and whether it is the selected reference.
 
 The readout is the source that is actually disciplining the clock. The detail is
-the most specific rung: no GPS device, gpsd not running, no fix, fix without
-PPS, ready but not selected, or the fix that is steering it. A fix never forces
-the clock onto GPS, and an offset threshold is never applied — see ADR 0001.
+the most specific rung: gpsd is not installed, no GPS device, gpsd not running,
+no fix, fix without PPS, ready but not selected, or the fix that is steering it.
+A fix never forces the clock onto GPS, and an offset threshold is never applied —
+see ADR 0001.
 
 `gpsMode` says what the station expects:
 
@@ -97,6 +98,84 @@ the clock onto GPS, and an offset threshold is never applied — see ADR 0001.
 ```bash
 omarchy bar set myockey.station gpsMode Optional
 ```
+
+## GPS time sync setup
+
+The check reports what the station is doing; it never installs, enables or
+reconfigures anything. Stock Omarchy disciplines the clock with
+systemd-timesyncd, so a station that leaves `gpsMode` at `Off` needs no extra
+packages at all.
+
+GPS *timing* — as opposed to GPS presence — needs two packages. `gpsd` brings
+`pps-tools`; `chrony` is what can consume a GPS refclock.
+
+```bash
+omarchy pkg add gpsd chrony
+```
+
+`chronyd.service` conflicts with `systemd-timesyncd.service`, so hand the clock
+over explicitly:
+
+```bash
+sudo timedatectl set-ntp false        # stops and disables systemd-timesyncd
+sudo systemctl enable --now chronyd
+```
+
+Point gpsd at the receiver in `/etc/default/gpsd`. Naming the device and adding
+`-n` matters: a receiver that arrives through the hotplug path cannot use kernel
+PPS, and without `-n` gpsd stops feeding time whenever no client is connected.
+
+```
+DEVICES="/dev/ttyUSB0"
+GPSD_OPTIONS="-n"
+```
+
+```bash
+sudo systemctl enable --now gpsd.service
+```
+
+Then point chrony at gpsd's sockets in `/etc/chrony.conf`. gpsd creates one
+socket per device it reads; `ls /run/chrony.*.sock` after gpsd starts shows the
+real names. Arch's `gpsd.service` is already ordered after `chronyd.service`,
+which the socket form needs.
+
+```
+refclock SOCK /run/chrony.ttyUSB0.sock refid GPS precision 1e-1 offset 0.2
+refclock SOCK /run/chrony.pps0.sock refid PPS precision 1e-7
+```
+
+If no PPS socket appears, the shared-memory form is the alternative:
+`refclock SHM 0 refid GPS precision 1e-1 offset 0.2` plus
+`refclock SHM 1 refid PPS precision 1e-7`.
+
+A receiver that carries PPS on the serial DCD line needs the PPS line discipline
+attached. It does not survive a replug, so a udev rule is the place to automate
+it if you want that:
+
+```bash
+sudo ppsldisc /dev/ttyUSB0
+```
+
+Verify with `gpsmon` (3D fix and `PPS` lines), `ppstest /dev/pps0`, then
+`chronyc sources` (the GPS refclock selected, shown as `#*`) and `chronyc
+tracking`. Then tell the widget what to expect:
+
+```bash
+omarchy bar set myockey.station gpsMode Optional   # or Required
+```
+
+**What udev already does.** The `gpsd` package ships
+`/usr/lib/udev/rules.d/25-gpsd-usb.rules` and `gpsdctl@.service`: a recognised
+GNSS receiver creates `/dev/gpsN` and is offered to a running gpsd on plug-in
+(`USBAUTO="true"` in `/etc/default/gpsd`). Generic USB-serial chips — the FTDI
+and PL2303 that many receivers sit behind — are deliberately excluded upstream,
+because they match too much hardware; use `DEVICES=` or a local VID:PID rule for
+those. Installing packages and switching time daemons cannot be automated from a
+udev worker, and this plugin does not try.
+
+If the GPS is only used for position, `gpsd` alone is enough: the check reports
+`3D fix · no PPS` or `GPS ready · not selected` and stays green under
+`gpsMode=Optional`.
 
 ## CAT control
 
