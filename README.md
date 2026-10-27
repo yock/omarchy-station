@@ -16,7 +16,7 @@ The plugin treats station readiness as three independent checks:
 |---|---|
 | **Time sync** | Which source is disciplining the clock — GPS/PPS or NTP? If GPS is configured, how far did it get: no device, gpsd down, no fix, fix without PPS, ready but not selected? A healthy NTP fallback still counts. |
 | **CAT control** | Is `rigctld` reachable? What frequency/mode is the rig on? Is the serial device present and permitted? |
-| **Radio audio** | Are the radio RX/TX devices present on PipeWire? Are they muted or suspended? What are the levels and sample rate? |
+| **Radio audio** | Are the assigned Radio RX and Radio TX nodes present on PipeWire and unmuted, and is Radio TX kept off the system default output? |
 
 The overall state is the worst of the three:
 
@@ -31,9 +31,9 @@ state rather than a fake green.
 ## Presentation
 
 The expanded panel is a verdict line over a three-column readout: time source,
-frequency and audio rate, each with a coloured rule underneath. Time leads with
-its source rather than an offset, because a clock's variance is not a readiness
-signal. The bar keeps the station glyph and a single dot.
+frequency and the assigned radio, each with a coloured rule underneath. Time
+leads with its source rather than an offset, because a clock's variance is not a
+readiness signal. The bar keeps the station glyph and a single dot.
 
 The glyph is drawn in QML (`StationGlyph.qml`) rather than set in an icon font.
 That keeps it legible at the bar's 18px optical canvas — the Nerd Font tower and
@@ -122,9 +122,14 @@ Remove it with `omarchy plugin remove myockey.station --yes` when you are done.
    power are TX-only, model-specific and calibration-dependent: read them only
    as a last-TX diagnostic if the rig reports them, and never let them affect
    readiness.
-3. **Audio** — discover PipeWire nodes, label them **Radio RX** and **Radio TX**,
-   show presence/mute/level/sample rate, and warn if Radio TX is the system
-   default sink.
+3. **Audio** — assign one PipeWire source to **Radio RX** and one sink to
+   **Radio TX**, with candidates ranked by codec family (C-Media, TI PCM290x,
+   West Mountain) rather than by model, because a Digirig, an IC-7300 and a
+   SignaLink all announce "USB Audio CODEC". Report node presence, mute, and
+   Radio TX being the system default output. Use Quickshell's native PipeWire
+   service; suspend, sample rate, levels and signal presence are never
+   readiness signals. Stations with a hardware TNC have no host audio path at
+   all and are designed separately (#4).
 
 ## Safety
 

@@ -67,3 +67,47 @@ keying path, not RF output. _Avoid_: PTT test, TX check.
 **PTT test**:
 Keying the rig to see whether it emits RF. Out of scope until a watchdog-backed
 keying path exists. _Avoid_: PTT check.
+
+**Radio audio**:
+The station's sound path to and from the transceiver: a receive path the station
+decodes from and a transmit path it plays tones into. _Avoid_: sound, audio
+device, audio chain.
+
+**Radio RX**:
+The receive role in radio audio: the source a digital-mode app captures the
+rig's audio from. A role, not a device. _Avoid_: input, microphone, capture
+device.
+
+**Radio TX**:
+The transmit role in radio audio: the sink a digital-mode app plays its tones
+into. A role, not a device. _Avoid_: output, speaker, playback device.
+
+**Node assignment**:
+The operator's explicit binding of Radio RX or Radio TX to one audio node. Two
+roles, one node each; never bound silently. _Avoid_: mapping, selection,
+auto-detect.
+
+**Radio codec**:
+An audio interface that carries radio audio: a Digirig, a SignaLink, or a rig's
+built-in USB sound card. A codec reports its chip family, never the radio model
+— a Digirig, an IC-7300 and a SignaLink can all announce "USB Audio CODEC".
+_Avoid_: sound card, interface, dongle, known device.
+
+**Codec family**:
+The descriptor group a radio codec belongs to: C-Media CM108/CM119, TI PCM290x,
+West Mountain. It is all the station can actually recognise, and it is shared
+with consumer gear, so it suggests rather than identifies. _Avoid_: model,
+device type.
+
+**Silence**:
+No audio arriving on Radio RX at this instant. Never a readiness signal: a
+missing node is, an empty band is not. _Avoid_: no signal, dead air, level.
+
+**Node suspend**:
+The system idling an unused audio node. Normal between transmissions, and never
+a readiness signal. _Avoid_: asleep, powered down, lost node.
+
+**On-air output**:
+The system default output being Radio TX, so unrelated sounds are transmitted.
+A warning, never a failure: the station still works a digital mode. _Avoid_:
+default sink, routing problem.
