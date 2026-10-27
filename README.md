@@ -1,8 +1,8 @@
 # Omarchy Station
 
-A station-readiness widget for [Omarchy](https://omarchy.org/) 4.x. One
-transceiver glyph in the bar and a small green/amber/red dot; click it for the
-expanded readiness panel.
+A station-readiness widget for [Omarchy](https://omarchy.org/) 4.x. One drawn
+station glyph — a mast with a tip ball and signal arcs — and a small
+green/amber/red dot; click it for the expanded readiness panel.
 
 This repository is a **skeleton**. The status model, bar indicator and expanded
 panel are in place; the three probes are deliberately stubbed as `unknown` so
@@ -33,7 +33,13 @@ state rather than a fake green.
 The expanded panel is a verdict line over a three-column readout: time source,
 frequency and audio rate, each with a coloured rule underneath. Time leads with
 its source rather than an offset, because a clock's variance is not a readiness
-signal. The bar keeps the transceiver glyph and a single dot.
+signal. The bar keeps the station glyph and a single dot.
+
+The glyph is drawn in QML (`StationGlyph.qml`) rather than set in an icon font.
+That keeps it legible at the bar's 18px optical canvas — the Nerd Font tower and
+antenna glyphs all fuse into blobs at that size — and means the widget needs no
+Nerd Font at all. Its arc tips stop short of the top-right corner so the status
+dot is never crowded; the dot alone carries state.
 
 The panel was chosen from three prototypes — triage list, instrument panel and
 guided flow. The full set, including the losing variants and their sample data,
@@ -44,7 +50,8 @@ lives on the `prototype/station-panel` branch.
 ```
 omarchy-station/
 ├── manifest.json          # plugin id: myockey.station, kind: bar-widget
-├── BarWidget.qml          # icon, readiness dot, panel loader, IPC
+├── BarWidget.qml          # station glyph, readiness dot, panel loader, IPC
+├── StationGlyph.qml       # the drawn mast glyph
 ├── Panel.qml              # expanded readiness panel
 ├── Readiness.js           # pure state model and aggregation
 ├── test/readiness-test.js # node test for the aggregation rules
@@ -71,7 +78,7 @@ QML lint (Qt 6):
 tmp=$(mktemp -d)
 ln -s /usr/share/omarchy/shell "$tmp/qs"
 /usr/lib/qt6/bin/qmllint -I "$tmp" -I /usr/lib/qt6/qml \
-  BarWidget.qml Panel.qml
+  BarWidget.qml StationGlyph.qml Panel.qml
 rm -rf "$tmp"
 ```
 

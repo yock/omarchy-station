@@ -5,6 +5,11 @@ right now?
 
 ## Language
 
+**Station**:
+The installation the widget assesses: a host, a transceiver, an audio chain and
+a time source, whether a portable backpack setup or a modest fixed one.
+_Avoid_: setup, shack.
+
 **Readiness**:
 Whether the station can work a digital mode right now, expressed as the worst of
 the three checks. _Avoid_: health, status, green.

@@ -4,7 +4,7 @@ import qs.Commons
 import qs.Ui
 import "Readiness.js" as Readiness
 
-// Station readiness in the bar: one transceiver glyph plus a small status dot.
+// Station readiness in the bar: one station glyph plus a small status dot.
 // The dot is always present; grey means "not probed yet", green means all
 // checks are ready, amber means attention, red means the station is not ready.
 //
@@ -19,9 +19,10 @@ BarWidget {
   readonly property string overallState: Readiness.overall(readiness)
   readonly property color overallColor: Readiness.color(overallState)
 
-  // Nerd Font microchip, the same stand-in the existing Ham Radio plugin uses
-  // for a transceiver. Easy to swap once the icon is chosen.
-  readonly property string glyph: "\uf2db"
+  // The glyph is drawn (StationGlyph.qml), not set in an icon font. 18px is
+  // the optical canvas it was tuned on: big enough for the arcs to separate
+  // from the ball, still inside the bar's 21px status slot.
+  readonly property int glyphSize: 18
 
   function injectPanel() {
     var target = panelLoader.item
@@ -81,8 +82,15 @@ BarWidget {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.glyph
     slotSize: Style.bar.statusSlot
+    opticalSize: root.glyphSize
+    iconComponent: Component {
+      StationGlyph {
+        anchors.centerIn: parent
+        size: root.glyphSize
+        color: button.foreground
+      }
+    }
     tooltipText: Readiness.tooltip(root.readiness)
     onPressed: function(b) {
       if (b === Qt.MiddleButton) root.refresh()
