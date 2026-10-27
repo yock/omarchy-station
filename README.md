@@ -14,7 +14,7 @@ The plugin treats station readiness as three independent checks:
 
 | Check | What it will answer |
 |---|---|
-| **Time sync** | Is the host clock synchronized? What is the offset? Is GPS/PPS present? Is the next FT8 slot close? |
+| **Time sync** | Which source is disciplining the clock — GPS/PPS or NTP? If GPS is configured, how far did it get: no device, gpsd down, no fix, fix without PPS, ready but not selected? A healthy NTP fallback still counts. |
 | **CAT control** | Is `rigctld` reachable? What frequency/mode is the rig on? Is the serial device present and permitted? |
 | **Radio audio** | Are the radio RX/TX devices present on PipeWire? Are they muted or suspended? What are the levels and sample rate? |
 
@@ -27,6 +27,17 @@ The overall state is the worst of the three:
 
 The dot is intentionally always visible. Grey is an honest "not wired yet"
 state rather than a fake green.
+
+## Presentation
+
+The expanded panel is a verdict line over a three-column readout: time source,
+frequency and audio rate, each with a coloured rule underneath. Time leads with
+its source rather than an offset, because a clock's variance is not a readiness
+signal. The bar keeps the transceiver glyph and a single dot.
+
+The panel was chosen from three prototypes — triage list, instrument panel and
+guided flow. The full set, including the losing variants and their sample data,
+lives on the `prototype/station-panel` branch.
 
 ## Layout
 
@@ -89,11 +100,21 @@ Remove it with `omarchy plugin remove myockey.station --yes` when you are done.
 ## Next probes
 
 1. **Time** — read `timedatectl timesync-status` (stock Omarchy) or
-   `chronyc tracking`; optionally read `gpspipe -w` for TPV/SKY/PPS. Compute the
-   15-second FT8 slot countdown and warn above a configurable offset.
+   `chronyc tracking` for the selected reference and sync state; read
+   `gpspipe -w` for TPV/SKY when GPS is configured. Report the most specific
+   rung of the source ladder: no device, gpsd not running, no fix, fix without
+   PPS, ready but not selected, or disciplining. A fix does not force the clock
+   onto GPS — chrony's selected reference is the active source, and a healthy
+   NTP fallback still counts as ready. Do not grade the clock on an offset
+   threshold: a residual measured against a trusted source is not an
+   independent signal.
 2. **CAT** — detect an existing `rigctld`, otherwise optionally start one;
-   poll `rigctl -m 2 f`, `m`, `t`, `l SWR`, `l ALC`. Do not open the serial
-   device directly if another app already owns it.
+   poll `rigctl -m 2 f`, `m`, and optionally `t` for PTT state. Do not open the
+   serial device directly if another app already owns it. PTT state is
+   read-only; there is no test button and no keying. SWR, ALC and forward
+   power are TX-only, model-specific and calibration-dependent: read them only
+   as a last-TX diagnostic if the rig reports them, and never let them affect
+   readiness.
 3. **Audio** — discover PipeWire nodes, label them **Radio RX** and **Radio TX**,
    show presence/mute/level/sample rate, and warn if Radio TX is the system
    default sink.
