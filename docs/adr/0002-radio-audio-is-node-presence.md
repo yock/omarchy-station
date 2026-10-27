@@ -13,8 +13,8 @@ long-lived unsandboxed shell for a number that never changes state. Mutes warn
 while absence fails, because absence means the configured path is gone while a
 mute is one toggle from ready. PipeWire not running fails rather than reading
 unknown, since the check cannot be answered at all. An unassigned role reads
-unknown rather than ok — deliberately unlike ADR 0001's "no GPS configured is
-ok" — because every digital-mode station needs an audio path, and a confident
+unknown rather than ok — deliberately unlike ADR 0001's "GPS mode off is ok"
+— because every digital-mode station needs an audio path, and a confident
 green over a check nobody configured is a lie. Node identity is the PipeWire
 node name, stored after explicit confirmation and never rebound automatically; a
 vanished name fails and the operator re-picks, because generic USB codec names

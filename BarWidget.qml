@@ -31,20 +31,35 @@ BarWidget {
   readonly property string overallState: Readiness.overall(readiness)
   readonly property color overallColor: Readiness.color(overallState)
 
-  // Two roles, one node each, stored as PipeWire node.name in this widget's
-  // shell.json entry. Update the whole entry: updateEntryInline replaces it,
-  // and an omitted key would be a deletion.
-  function assignAudio(role, name) {
-    var key = Readiness.audioSettingKey(role)
+  // Every setting lives in this widget's bar entry. Rebuild the whole entry:
+  // updateEntryInline replaces it, and an omitted key would be a deletion.
+  function assignSetting(key, value) {
+    var modeChanged = key === Readiness.gpsModeSettingKey()
+      && Readiness.gpsModeOf(value) !== Readiness.gpsModeOf(root.setting(key, "Off"))
+
     var entry = { id: root.moduleName }
     for (var existing in root.settings) if (existing !== "id") entry[existing] = root.settings[existing]
-    entry[key] = String(name || "")
+    entry[key] = value
 
     // Applied locally first so the check changes on the click itself. Without
     // a writable bar entry the choice lives only for this session.
     root.settings = entry
     if (root.bar && root.bar.shell && typeof root.bar.shell.updateEntryInline === "function")
       root.bar.shell.updateEntryInline(root.moduleName, entry)
+
+    // The facts collected under one GPS mode are not the facts the next mode
+    // asks for: forget the old answer, then poll rather than wait out
+    // refreshIntervalSec. A poll already in flight is replayed, not committed.
+    if (modeChanged) {
+      timeProbe.invalidate()
+      timeProbe.refresh()
+    }
+  }
+
+  // Node assignments are settings too; the single writer keeps the
+  // entry-rebuild rule in one place.
+  function assignAudio(role, name) {
+    root.assignSetting(Readiness.audioSettingKey(role), String(name || ""))
   }
 
   AudioProbe {

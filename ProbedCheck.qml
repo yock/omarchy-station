@@ -19,6 +19,9 @@ Item {
   property bool probing: false
   property bool refreshPending: false
   property var pending: ({})
+  // Set when the question changed mid-poll, so this poll's facts are not
+  // committed under the new question.
+  property bool stale: false
 
   function blankFacts() { return ({}) }
   function startPoll() {}
@@ -33,9 +36,22 @@ Item {
     root.startPoll()
   }
 
+  // The committed answer was assembled from facts that no longer answer the
+  // current question (a setting changed). Drop it so the check reads grey,
+  // not a confident answer under the wrong rules; a poll already in flight is
+  // not committed either.
+  function invalidate() {
+    root.stale = root.probing
+    root.facts = root.blankFacts()
+    root.probed = false
+  }
+
   function finish() {
-    root.facts = root.pending
-    root.probed = true
+    if (!root.stale) {
+      root.facts = root.pending
+      root.probed = true
+    }
+    root.stale = false
     root.probing = false
     if (!root.refreshPending) return
     root.refreshPending = false

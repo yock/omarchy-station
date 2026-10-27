@@ -23,7 +23,7 @@ assert.equal(R.rows(empty)[0].readout, "—")
 assert.equal(R.counts(empty).unknown, 3)
 
 const allReady = {
-  time: R.check(R.OK, "NTP", "no GPS configured", "clock disciplined"),
+  time: R.check(R.OK, "NTP", "GPS mode off", "clock disciplined"),
   cat: R.check(R.OK, "14.074", "MHz USB · FT-891", "rigctld · PTT receive"),
   audio: R.check(R.OK, "USB codec", "Radio RX and TX ready", "TX: USB codec")
 }
@@ -40,7 +40,7 @@ assert.equal(R.verdict(R.OK), "Station ready")
 assert.match(R.verdictDetail(R.OK, R.counts(allReady)), /All three checks are green/)
 
 const oneWarning = {
-  time: R.check(R.OK, "NTP", "no GPS configured", "clock disciplined"),
+  time: R.check(R.OK, "NTP", "GPS mode off", "clock disciplined"),
   cat: R.check(R.WARN, "—", "rig not responding", ""),
   audio: R.check(R.OK, "USB codec", "Radio RX and TX ready", "TX: USB codec")
 }
@@ -60,7 +60,7 @@ assert.match(R.tooltip(oneFailure), /Station: Not ready/)
 assert.match(R.tooltip(oneFailure), /CAT control: Fault/)
 
 const partial = {
-  time: R.check(R.OK, "NTP", "no GPS configured", "clock disciplined"),
+  time: R.check(R.OK, "NTP", "GPS mode off", "clock disciplined"),
   cat: R.check(R.UNKNOWN, "—", "Not probed yet", ""),
   audio: R.check(R.OK, "USB codec", "Radio RX and TX ready", "TX: USB codec")
 }
@@ -355,6 +355,33 @@ assert.equal(R.gpsModeOf("OPTIONAL"), R.GPS_OPTIONAL)
 assert.equal(R.gpsModeOf("required"), R.GPS_REQUIRED)
 assert.equal(R.gpsModeOf(undefined), R.GPS_OFF)
 
+// The picker renders one row per manifest option, in the manifest's order,
+// with the consequence that value has for the time check. The stored value
+// keeps the manifest's casing; the ladder normalises it only for comparison.
+assert.equal(R.gpsModeSettingKey(), "gpsMode")
+
+const gpsOptions = R.gpsModeRows("Off")
+assert.equal(gpsOptions.map(function(o) { return o.value }).join("|"), "Off|Optional|Required")
+assert.equal(gpsOptions[0].description, "NTP is enough")
+assert.equal(gpsOptions[1].description, "warn when GPS is lost")
+assert.equal(gpsOptions[2].description, "warn when GPS is lost, has no PPS, or is not selected")
+
+// The current value is marked, and the cursor starts on that row.
+const optionalRows = R.gpsModeRows("Optional")
+assert.equal(optionalRows.length, 3)
+assert.equal(optionalRows[0].assigned, false)
+assert.equal(optionalRows[1].assigned, true)
+assert.equal(optionalRows[1].label, "Optional")
+assert.equal(optionalRows[1].description, "warn when GPS is lost")
+assert.equal(R.gpsModeCursor("Optional"), 1)
+assert.equal(R.gpsModeCursor("OFF"), 0)
+
+// Whatever casing shell.json holds, the manifest's row is the one marked.
+assert.equal(R.gpsModeRows("required")[2].assigned, true)
+assert.equal(R.gpsModeCursor("required"), 2)
+assert.equal(R.gpsModeRows("nonsense")[0].assigned, true)
+assert.equal(R.gpsModeCursor("nonsense"), 0)
+
 // No daemon at all: the clock is free-running, and that is a fault.
 const noDaemon = R.timeCheck(timeInput({ daemon: "none", synced: false }))
 assert.equal(noDaemon.state, R.FAIL)
@@ -383,7 +410,7 @@ assert.match(unsyncedTimesyncd.meta, /systemd-timesyncd/)
 const ntpReady = R.timeCheck(timeInput())
 assert.equal(ntpReady.state, R.OK)
 assert.equal(ntpReady.readout, "NTP")
-assert.equal(ntpReady.detail, "no GPS configured")
+assert.equal(ntpReady.detail, "GPS mode off")
 assert.equal(ntpReady.meta, "clock disciplined")
 
 // GPS configured but lost: the check warns even though NTP still carries the
@@ -907,5 +934,81 @@ assert.match(R.verdictDetail(R.WARN, R.counts(station)), /1 of 3 checks needs at
 assert.equal(R.rows(station)[0].detail, "GPS · no fix")
 assert.equal(R.rows(station)[0].meta, "GPS lost")
 assert.match(R.tooltip(station), /Time sync: Check — GPS · no fix/)
+
+// ---- Settings reference: README agrees with the manifest ----------------
+//
+// manifest.json is the source of truth for every bar-widget setting. The
+// README's Settings table is the discovery path for the keys the panel does
+// not edit (refreshIntervalSec) and must not drift from the schema.
+
+const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "manifest.json"), "utf8"))
+const schema = manifest.barWidget.schema
+
+const readme = fs.readFileSync(path.join(__dirname, "..", "README.md"), "utf8")
+const settingsSection = /^## Settings[ \t]*\n([\s\S]*?)(?=^## )/m.exec(readme)
+assert.ok(settingsSection, "README has a ## Settings section")
+
+function readmeSettingsRows(section) {
+  const rows = []
+  for (const line of section.split("\n")) {
+    if (line.charAt(0) !== "|") continue
+    const cells = line.replace(/^\|/, "").replace(/\|\s*$/, "")
+      .split("|").map(function(cell) { return cell.trim() })
+    if (cells.length !== 5) continue
+    const key = /^`([^`]+)`$/.exec(cells[0])
+    if (!key) continue
+    rows.push({
+      key: key[1],
+      type: cells[1],
+      accepted: cells[2],
+      // Backticks keep the table readable; the value is what is inside them.
+      default: cells[3].replace(/^`|`$/g, ""),
+      effect: cells[4]
+    })
+  }
+  return rows
+}
+
+const settingsRows = readmeSettingsRows(settingsSection[1])
+const documented = {}
+for (const row of settingsRows) documented[row.key] = row
+
+// Every schema key has a row, and no row documents a key the schema does not
+// declare.
+assert.deepEqual(
+  Object.keys(documented).sort(),
+  schema.map(function(entry) { return entry.key }).sort()
+)
+
+function displayedDefault(value) {
+  return String(value) === "" ? "(empty)" : String(value)
+}
+
+for (const entry of schema) {
+  const row = documented[entry.key]
+  assert.equal(row.type, entry.type, entry.key + " type")
+  assert.equal(row.default, displayedDefault(entry.defaultValue), entry.key + " default")
+  assert.notEqual(row.effect, "", entry.key + " effect")
+  if (entry.type === "enum")
+    for (const option of entry.options)
+      assert.ok(row.accepted.indexOf(option) !== -1, entry.key + " lists " + option)
+  if (entry.type === "integer")
+    for (const bound of [entry.min, entry.max])
+      assert.ok(row.accepted.indexOf(String(bound)) !== -1, entry.key + " lists " + bound)
+}
+
+// The picker's rows and the manifest's enum come from the same order and key.
+const gpsEntry = schema.filter(function(entry) { return entry.key === "gpsMode" })[0]
+assert.equal(gpsEntry.type, "enum")
+assert.equal(
+  R.gpsModeRows("Off").map(function(option) { return option.value }).join("|"),
+  gpsEntry.options.join("|")
+)
+assert.equal(R.gpsModeSettingKey(), gpsEntry.key)
+
+// The policy matrix stays in the Time sync section; the settings table points
+// at it instead of restating it.
+assert.match(readme, /## Time sync[\s\S]*`gpsMode` says what the station expects/)
+assert.match(readme, /## Time sync[\s\S]*\| `Off` \(default\) \| `GPS mode off` \| — \|/)
 
 console.log("readiness tests passed")

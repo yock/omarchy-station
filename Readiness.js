@@ -102,7 +102,52 @@ var GPS_OFF = "off"
 var GPS_OPTIONAL = "optional"
 var GPS_REQUIRED = "required"
 
-var TIME_NO_GPS = "no GPS configured"
+// The setting's key and its manifest values. The ladder normalises casing;
+// the picker writes and displays the manifest's casing, so the stored value
+// is always one of these.
+var GPS_MODE_KEY = "gpsMode"
+
+var GPS_MODE_OPTIONS = [
+  { value: "Off", consequence: "NTP is enough" },
+  { value: "Optional", consequence: "warn when GPS is lost" },
+  { value: "Required", consequence: "warn when GPS is lost, has no PPS, or is not selected" }
+]
+
+function gpsModeSettingKey() {
+  return GPS_MODE_KEY
+}
+
+// The picker's rows: the consequence is the one-line reason under the label,
+// and `assigned` marks the value the station is set to. Order is the
+// manifest's, least to most strict.
+function gpsModeRows(current) {
+  var active = gpsModeOf(current)
+  var rows = []
+  for (var i = 0; i < GPS_MODE_OPTIONS.length; i++) {
+    var option = GPS_MODE_OPTIONS[i]
+    rows.push({
+      kind: "gps",
+      selectable: true,
+      value: option.value,
+      label: option.value,
+      description: option.consequence,
+      assigned: gpsModeOf(option.value) === active
+    })
+  }
+  return rows
+}
+
+// The cursor opens on the current mode's row.
+function gpsModeCursor(current) {
+  var rows = gpsModeRows(current)
+  for (var i = 0; i < rows.length; i++)
+    if (rows[i].assigned === true) return i
+  return 0
+}
+
+// The detail names the setting rather than the absent hardware: with the mode
+// off there is nothing missing, only a configuration choice.
+var TIME_GPS_OFF = "GPS mode off"
 var TIME_DISCIPLINED = "clock disciplined"
 var TIME_GPS_LOST = "GPS lost"
 
@@ -174,7 +219,7 @@ function timeCheck(input) {
   }
 
   if (!configured)
-    return check(OK, "NTP", TIME_NO_GPS, TIME_DISCIPLINED)
+    return check(OK, "NTP", TIME_GPS_OFF, TIME_DISCIPLINED)
 
   // GPS is the configured source. The readout stays the source the daemon is
   // actually using until GPS is the selected reference.

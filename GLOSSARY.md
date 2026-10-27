@@ -48,9 +48,9 @@ package not installed, no device, daemon not running, no fix, fix without PPS,
 ready but not selected, or disciplining the clock. _Avoid_: GPS status.
 
 **GPS mode**:
-The station's setting for whether GPS timing is expected: `off` (no GPS, NTP is
-enough), `optional` (GPS configured, so losing it warns but a fix without PPS or
-an unselected fix stays green) or `required` (all three warn). _Avoid_: GPS
+The station's setting for whether GPS timing is expected: `Off` (no GPS, NTP is
+enough), `Optional` (GPS configured, so losing it warns but a fix without PPS or
+an unselected fix stays green) or `Required` (all three warn). _Avoid_: GPS
 enabled, GPS strictness.
 
 **Offset**:

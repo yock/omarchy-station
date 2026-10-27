@@ -6,7 +6,8 @@ green/amber/red dot; click it for the expanded readiness panel.
 
 Radio audio, time sync and CAT control are all wired: the panel reports the
 source disciplining the clock, the rig's frequency and mode, and the two
-assigned PipeWire nodes, and it edits the audio assignments inline.
+assigned PipeWire nodes, and it edits the audio assignments and the GPS mode
+inline.
 
 ## Readiness model
 
@@ -60,7 +61,7 @@ omarchy-station/
 ├── StationGlyph.qml       # the drawn mast glyph
 ├── Panel.qml              # expanded readiness panel and assignment picker
 ├── Readiness.js           # pure state model, ladders, parsers, ranking
-├── test/readiness-test.js # node tests for the model and the ladders
+├── test/readiness-test.js # node tests for the model, ladders and settings
 ├── README.md
 └── LICENSE
 ```
@@ -71,6 +72,18 @@ The QML side only renders a snapshot; replacing the whole snapshot keeps the
 bar, tooltip and panel consistent. Time and CAT share `ProbedCheck.qml`'s poll
 state machine, which assembles facts off-screen and commits them in one
 assignment, so a poll in flight never paints a half-updated check.
+
+## Settings
+
+Every key is stored in this widget's bar entry and declared in `manifest.json`,
+which stays the source of truth for type, accepted values and default.
+
+| Key | Type | Accepted values | Default | What it changes |
+|---|---|---|---|---|
+| `refreshIntervalSec` | integer | 1–60 | `5` | How often the time and CAT checks are re-probed, in seconds; radio audio updates live. CLI-only: `omarchy bar set myockey.station refreshIntervalSec 10`. |
+| `gpsMode` | enum | `Off`, `Optional`, `Required` | `Off` | Whether GPS timing is expected, and how hard its loss bites. Editable from the panel: click Time sync or press `g`. The consequences are the [Time sync policy matrix](#time-sync), not restated here. |
+| `radioRxNode` | string | any PipeWire source `node.name`, or `(empty)` | `(empty)` | The source a digital-mode app captures the rig's audio from. Editable in the audio picker: click Radio audio or press `a`. |
+| `radioTxNode` | string | any PipeWire sink `node.name`, or `(empty)` | `(empty)` | The sink a digital-mode app plays tones into. Editable in the audio picker: click Radio audio or press `a`. |
 
 ## Time sync
 
@@ -91,7 +104,7 @@ see ADR 0001.
 
 | Value | No device, gpsd down, no fix | Fix without PPS, or ready but not selected |
 |---|---|---|
-| `Off` (default) | `no GPS configured` | — |
+| `Off` (default) | `GPS mode off` | — |
 | `Optional` | amber | green |
 | `Required` | amber | amber |
 

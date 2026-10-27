@@ -25,9 +25,10 @@ Panel {
   property var readiness: Readiness.emptySnapshot()
   property var audioCandidates: ({ rx: [], tx: [] })
 
-  // The picker edits node assignments; it never opens by itself and it also
-  // opens over a green check so either role can be replaced.
-  property bool pickerOpen: false
+  // Which inline picker is open: "" | "audio" | "gps". At most one is open,
+  // neither opens by itself, and both open over a green check because they
+  // edit configuration rather than remediate a fault.
+  property string pickerKind: ""
   property int pickerIndex: 0
 
   readonly property var barIdentity: hostWidget || root
@@ -46,9 +47,18 @@ Panel {
     return String(root.setting(Readiness.audioSettingKey(role), ""))
   }
 
-  // Assignment goes back through the bar widget, which owns the whole
+  readonly property string gpsModeSetting: String(root.setting(Readiness.gpsModeSettingKey(), "Off"))
+
+  // Every edit goes back through the bar widget, which owns the whole
   // shell.json entry: updateEntryInline replaces it, and the entry also holds
-  // refreshIntervalSec and the other role.
+  // refreshIntervalSec and the other settings.
+  function assignSetting(key, value) {
+    if (root.hostWidget && typeof root.hostWidget.assignSetting === "function")
+      root.hostWidget.assignSetting(key, value)
+  }
+
+  // Audio goes through the role-aware writer so the role-to-key mapping stays
+  // in one place; every other setting writes by key.
   function assignAudio(role, name) {
     if (root.hostWidget && typeof root.hostWidget.assignAudio === "function")
       root.hostWidget.assignAudio(role, name)
@@ -84,18 +94,33 @@ Panel {
 
   // One flat display list so headers, rows and the Done row render in order,
   // while only `selectable` entries take a cursor slot.
-  readonly property var pickerModel: {
-    var rx = root.audioCandidates && root.audioCandidates.rx ? root.audioCandidates.rx : []
-    var tx = root.audioCandidates && root.audioCandidates.tx ? root.audioCandidates.tx : []
-    var list = root.pickerSection(rx, "rx", "Radio RX · sources", "No audio sources present")
-      .concat(root.pickerSection(tx, "tx", "Radio TX · sinks", "No audio sinks present"))
-    list.push({ kind: "done", selectable: true, label: "Done" })
-
+  function slotPickerRows(list) {
     var slot = 0
     for (var i = 0; i < list.length; i++)
       if (list[i].selectable === true) list[i].slot = slot++
     return list
   }
+
+  readonly property var audioPickerModel: {
+    var rx = root.audioCandidates && root.audioCandidates.rx ? root.audioCandidates.rx : []
+    var tx = root.audioCandidates && root.audioCandidates.tx ? root.audioCandidates.tx : []
+    var list = root.pickerSection(rx, "rx", "Radio RX · sources", "No audio sources present")
+      .concat(root.pickerSection(tx, "tx", "Radio TX · sinks", "No audio sinks present"))
+    list.push({ kind: "done", selectable: true, label: "Done" })
+    return root.slotPickerRows(list)
+  }
+
+  // The GPS picker edits a setting, not a node: choosing a mode applies it,
+  // and Escape collapses the picker, so there is no Clear or Done row.
+  readonly property var gpsPickerModel: {
+    var list = [{ kind: "header", selectable: false, text: "GPS mode" }]
+    var options = Readiness.gpsModeRows(root.gpsModeSetting)
+    for (var i = 0; i < options.length; i++) list.push(options[i])
+    return root.slotPickerRows(list)
+  }
+
+  readonly property var pickerModel: root.pickerKind === "gps" ? root.gpsPickerModel
+    : root.pickerKind === "audio" ? root.audioPickerModel : []
 
   readonly property var pickerRows: {
     var list = []
@@ -104,18 +129,28 @@ Panel {
     return list
   }
 
-  function togglePicker() {
-    if (root.pickerOpen) {
-      root.closePicker()
-      return
-    }
-    root.pickerIndex = 0
-    root.pickerOpen = true
+  // Opening the other picker replaces the open one; a second press of the
+  // same shortcut closes it. Neither picker ever opens by itself.
+  function openPicker(kind, index) {
+    root.pickerKind = kind
+    root.pickerIndex = index
+    root.clampPickerIndex()
     Qt.callLater(root.resetPickerScroll)
   }
 
+  function toggleAudioPicker() {
+    if (root.pickerKind === "audio") root.closePicker()
+    else root.openPicker("audio", 0)
+  }
+
+  // The cursor opens on the mode the station is set to.
+  function toggleGpsPicker() {
+    if (root.pickerKind === "gps") root.closePicker()
+    else root.openPicker("gps", Readiness.gpsModeCursor(root.gpsModeSetting))
+  }
+
   function closePicker() {
-    root.pickerOpen = false
+    root.pickerKind = ""
     root.pickerIndex = 0
   }
 
@@ -124,7 +159,7 @@ Panel {
   }
 
   function movePickerCursor(delta) {
-    if (!root.pickerOpen || root.pickerRows.length === 0) return
+    if (root.pickerKind === "" || root.pickerRows.length === 0) return
     root.pickerIndex += delta
     root.clampPickerIndex()
   }
@@ -144,7 +179,21 @@ Panel {
       root.assignAudio(row.role, "")
       return
     }
+    if (row.kind === "gps") {
+      root.applyGpsMode(row.value)
+      return
+    }
     root.assignAudio(row.role, row.name)
+  }
+
+  // Applying the mode already set writes nothing; a different one persists,
+  // and the bar widget re-polls the time check because the facts it needs
+  // changed. Either way the picker collapses on the choice.
+  function applyGpsMode(value) {
+    var sameMode = Readiness.gpsModeOf(value) === Readiness.gpsModeOf(root.gpsModeSetting)
+    root.closePicker()
+    if (sameMode) return
+    root.assignSetting(Readiness.gpsModeSettingKey(), String(value))
   }
 
   function activatePickerSlot(slot) {
@@ -202,13 +251,14 @@ Panel {
       onMoveRequested: function(dx, dy) {
         if (dy !== 0) root.movePickerCursor(dy)
       }
-      onActivateRequested: if (root.pickerOpen) root.activatePickerRow(root.pickerRows[root.pickerIndex])
+      onActivateRequested: if (root.pickerKind !== "") root.activatePickerRow(root.pickerRows[root.pickerIndex])
       onTextKey: function(t) {
-        if (t === "a" || t === "A") root.togglePicker()
+        if (t === "a" || t === "A") root.toggleAudioPicker()
+        else if (t === "g" || t === "G") root.toggleGpsPicker()
       }
       onCloseRequested: {
         // Escape collapses the picker before it closes the panel.
-        if (root.pickerOpen) root.closePicker()
+        if (root.pickerKind !== "") root.closePicker()
         else root.close()
       }
 
@@ -329,24 +379,29 @@ Panel {
                 color: Readiness.color(column.modelData.state)
               }
 
-              // Only the radio column edits assignments. A handler rather than
-              // an Item so the layout does not see a second child.
+              // The time column edits gpsMode; the radio column edits node
+              // assignments. A handler rather than an Item so the layout does
+              // not see a second child.
               TapHandler {
-                enabled: column.modelData.key === "audio"
+                enabled: column.modelData.key === "audio" || column.modelData.key === "time"
                 cursorShape: Qt.PointingHandCursor
-                onTapped: root.togglePicker()
+                onTapped: {
+                  if (column.modelData.key === "time") root.toggleGpsPicker()
+                  else if (column.modelData.key === "audio") root.toggleAudioPicker()
+                }
               }
             }
           }
         }
 
-        // ---- Assignment picker ---------------------------------------
-        // Inline under the readout grid, never auto-opened. Two role
-        // sections, a Clear row each, and Done to collapse. Only nodes
-        // present right now are listed; nothing binds without a click.
+        // ---- Inline picker -------------------------------------------
+        // Inline under the readout grid, never auto-opened, and at most one
+        // at a time. The audio picker edits node assignments; the GPS picker
+        // edits gpsMode. Only nodes present right now are listed; nothing
+        // binds without a click.
         ScrollView {
           id: pickerScroll
-          visible: root.pickerOpen
+          visible: root.pickerKind !== ""
           width: parent.width
           // Capped so a long node list cannot outgrow the panel; the list
           // scrolls, and the keyboard cursor is kept in view.
@@ -362,7 +417,7 @@ Panel {
             spacing: Style.space(4)
 
             Repeater {
-              model: root.pickerOpen ? root.pickerModel : []
+              model: root.pickerKind !== "" ? root.pickerModel : []
 
               delegate: Column {
                 id: pickerEntry
@@ -464,7 +519,7 @@ Panel {
 
         Text {
           width: parent.width
-          text: "Click Radio audio or press a to assign Radio RX and Radio TX · Middle-click the bar to re-probe · Bar dot: grey unknown · green ready · amber check · red fault"
+          text: "Click Time sync or press g to set GPS mode · Click Radio audio or press a to assign Radio RX and Radio TX · Middle-click the bar to re-probe · Bar dot: grey unknown · green ready · amber check · red fault"
           textFormat: Text.PlainText
           color: Util.alpha(root.foreground, 0.44)
           font.family: root.fontFamily
