@@ -40,7 +40,8 @@
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
-      "refreshIntervalSec": 5
+      "refreshIntervalSec": 5,
+      "gpsMode": "Off"
     },
     "schema": [
       {
@@ -50,7 +51,20 @@
         "min": 1,
         "max": 60,
         "step": 1,
-        "defaultValue": 5
+        "defaultValue": 5,
+        "description": "How often the time source and CAT link are probed. Radio audio updates live."
+      },
+      {
+        "key": "gpsMode",
+        "type": "enum",
+        "label": "GPS mode",
+        "options": [
+          "Off",
+          "Optional",
+          "Required"
+        ],
+        "defaultValue": "Off",
+        "description": "Off: no GPS, NTP is enough. Optional: GPS is configured, so losing it warns but a fix without PPS or an unselected fix stays green. Required: losing it, a fix without PPS or an unselected fix all warn."
       },
       {
         "key": "radioRxNode",

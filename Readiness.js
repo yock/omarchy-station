@@ -1,8 +1,8 @@
 // Pure readiness model shared by the bar indicator and the expanded panel.
 //
-// Time and CAT probes are not wired yet; radio audio is answered by
-// AudioProbe.qml. Each check is a small object with a state plus three display
-// fields:
+// TimeProbe.qml, CatProbe.qml and AudioProbe.qml resolve facts; the ladders in
+// this file own the rung order, the policy and the wording. Each check is a
+// small object with a state plus three display fields:
 //
 //   readout  the value the panel leads with: time source, frequency, or the
 //            assigned radio node
@@ -65,15 +65,443 @@ function check(state, readout, detail, meta) {
 }
 
 function emptySnapshot() {
-  return {
-    time: check(UNKNOWN, "—", "Not probed yet", ""),
-    cat: check(UNKNOWN, "—", "Not probed yet", ""),
-    audio: check(UNKNOWN, "—", "Not probed yet", "")
-  }
+  return { time: notProbed(), cat: notProbed(), audio: notProbed() }
 }
 
 function text(value) {
   return value === undefined || value === null ? "" : String(value)
+}
+
+// A check that has not been asked yet. Probes start here so the bar is grey
+// rather than red while the first answer is still in flight.
+function notProbed() {
+  return check(UNKNOWN, "—", "Not probed yet", "")
+}
+
+// ---- Time sync ----------------------------------------------------------
+//
+// ADR 0001: readiness is source health, never clock variance. The probe
+// resolves which daemon answers and how far the configured GPS source got;
+// this function owns the rung order, the gpsMode policy and the wording.
+//
+// `input` is:
+//
+//   gpsMode     "off" | "optional" | "required"
+//   daemon      "chrony" | "timesyncd" | "none"
+//   synced      the clock is being disciplined right now
+//   server      the reference carrying the clock, "" when there is none
+//   gps         { gpsd, missing, devices, mode, satellites, pps, selected }
+//
+// Rungs, most specific first: no device, gpsd not running, no fix, fix
+// without PPS, ready but not selected, disciplining. A fix never forces the
+// clock onto GPS — the daemon's selected reference decides the readout — and
+// a healthy NTP fallback is still a ready clock.
+
+var GPS_OFF = "off"
+var GPS_OPTIONAL = "optional"
+var GPS_REQUIRED = "required"
+
+var TIME_NO_GPS = "no GPS configured"
+var TIME_DISCIPLINED = "clock disciplined"
+var TIME_GPS_LOST = "GPS lost"
+
+function gpsModeOf(value) {
+  var mode = text(value).trim().toLowerCase()
+  if (mode === GPS_REQUIRED) return GPS_REQUIRED
+  if (mode === GPS_OPTIONAL) return GPS_OPTIONAL
+  return GPS_OFF
+}
+
+// The neutral fact set a probe starts from, and the shape timeCheck reads.
+// Kept here so the probe never invents a field and the tests can assert the
+// neutral answer.
+function timeFacts() {
+  return {
+    daemon: "none",
+    synced: false,
+    server: "",
+    gps: {
+      gpsd: false,
+      missing: false,
+      devices: 0,
+      mode: 0,
+      satellites: 0,
+      pps: false,
+      selected: false
+    }
+  }
+}
+
+function daemonLabel(daemon) {
+  if (daemon === "chrony") return "chrony"
+  if (daemon === "timesyncd") return "systemd-timesyncd"
+  return "no NTP daemon"
+}
+
+// Mode 2 is a 2D fix and mode 3 a 3D one; both carry UTC. Modes 0 and 1 have
+// no position or time solution at all.
+function gpsFixLabel(mode) {
+  return mode === 3 ? "3D fix" : "2D fix"
+}
+
+function satelliteMeta(gps) {
+  var used = Number(gps.satellites)
+  return isFinite(used) && used > 0 ? " · " + used + " satellites" : ""
+}
+
+function timeCheck(input) {
+  var facts = input || {}
+  var mode = gpsModeOf(facts.gpsMode)
+  var gps = facts.gps || {}
+  var daemon = text(facts.daemon) || "none"
+  var configured = mode !== GPS_OFF
+  var required = mode === GPS_REQUIRED
+
+  // Neither daemon answered: nothing is carrying the clock, which outranks
+  // every source rung because no rung can be reached without a daemon.
+  if (daemon === "none")
+    return check(FAIL, "None", "no time source", "clock free-running")
+
+  // A daemon that is up but not steering the clock is a fault, not a "cannot
+  // answer": the station has no trustworthy UTC right now.
+  if (facts.synced !== true) {
+    var label = daemonLabel(daemon)
+    var server = text(facts.server)
+    return check(FAIL, "None", "clock not synchronised",
+      server === "" ? label : label + " · " + server)
+  }
+
+  if (!configured)
+    return check(OK, "NTP", TIME_NO_GPS, TIME_DISCIPLINED)
+
+  // GPS is the configured source. The readout stays the source the daemon is
+  // actually using until GPS is the selected reference.
+  var readout = gps.selected === true ? "GPS" : "NTP"
+  var lostMeta = TIME_GPS_LOST + satelliteMeta(gps)
+  var policy = required ? WARN : OK
+
+  // A configured device that is gone is more specific than a daemon that is
+  // not running, so the device rung is first.
+  if (gps.gpsd !== true)
+    return gps.missing === true
+      ? check(WARN, readout, "no GPS device", lostMeta)
+      : check(WARN, readout, "gpsd not running", lostMeta)
+
+  // gpsd's own receiver list is authoritative while it is up.
+  if (gps.devices === 0)
+    return check(WARN, readout, "no GPS device", lostMeta)
+
+  if (!(gps.mode >= 2))
+    return check(WARN, readout, "GPS · no fix", lostMeta)
+
+  var fix = gpsFixLabel(gps.mode)
+
+  if (gps.pps !== true)
+    return check(policy, readout, fix + " · no PPS",
+      required ? "GPS required"
+        : (gps.selected === true ? "NMEA timing" : TIME_DISCIPLINED))
+
+  if (gps.selected !== true)
+    return check(policy, "NTP", "GPS ready · not selected",
+      required ? "GPS required" : TIME_DISCIPLINED)
+
+  return check(OK, "GPS", fix + " · PPS", TIME_DISCIPLINED)
+}
+
+// ---- Time probe: reading the tools ------------------------------------
+//
+// The probe runs the tools; these turn their output into the facts timeCheck
+// consumes. Every parser tolerates a truncated or missing answer and returns
+// neutral facts for it, so a stopped daemon can never read as healthy.
+
+function splitLines(value) {
+  return text(value).split("\n")
+}
+
+// `chronyc tracking`: the reference carrying the clock and whether chrony is
+// steering it. Reference ID 00000000 means no reference has ever been chosen.
+function chronyTrackingFacts(value) {
+  var facts = { synced: false, server: "", reference: "" }
+  var rows = splitLines(value)
+  for (var i = 0; i < rows.length; i++) {
+    var reference = /^\s*Reference ID\s*:\s*(\S+)\s*(?:\((.*)\))?/.exec(rows[i])
+    if (reference) {
+      facts.reference = text(reference[1])
+      var named = text(reference[2]).trim()
+      facts.server = named === "" ? facts.reference : named
+      continue
+    }
+    var leap = /^\s*Leap status\s*:\s*(.+?)\s*$/.exec(rows[i])
+    if (leap) facts.synced = text(leap[1]).toLowerCase() === "normal"
+  }
+  if (facts.reference === "00000000") facts.server = ""
+  return facts
+}
+
+// `chronyc sources`: '#' marks a local reference clock, '*' the selected
+// reference. A selected refclock means a receiver is steering the clock —
+// whether that is PPS or NMEA/SHM — and a reachable PPS refclock is what makes
+// the timing precise. Within this station model a selected refclock is the GPS
+// source; any other local clock is not modelled.
+function chronySourcesFacts(value) {
+  var facts = { pps: false, selected: false }
+  var rows = splitLines(value)
+  for (var i = 0; i < rows.length; i++) {
+    var entry = /^([\^=#])([*+\-?x~])\s+(\S+)/.exec(rows[i])
+    if (!entry || entry[1] !== "#") continue
+    if (entry[2] === "*") facts.selected = true
+    if ((entry[2] === "*" || entry[2] === "+") && /^pps/i.test(entry[3])) facts.pps = true
+  }
+  return facts
+}
+
+// `timedatectl timesync-status`: the server line names the reference. "n/a"
+// means timesyncd has not reached one, so there is no name to report.
+function timesyncStatusFacts(value) {
+  var facts = { server: "" }
+  var rows = splitLines(value)
+  for (var i = 0; i < rows.length; i++) {
+    var server = /^\s*Server\s*:\s*(.+?)\s*$/.exec(rows[i])
+    if (!server) continue
+    var raw = text(server[1])
+    var named = /\((.*)\)\s*$/.exec(raw)
+    var address = text(raw.replace(/\s*\(.*\)\s*$/, "")).trim()
+    if (address === "" || address === "n/a") break
+    var name = named ? text(named[1]).trim() : ""
+    facts.server = name === "" ? address : name
+    break
+  }
+  return facts
+}
+
+// `gpspipe -w`: one JSON message per line. VERSION proves gpsd answered,
+// DEVICES lists receivers, TPV carries the fix mode and SKY the satellites.
+function gpsReportFacts(value) {
+  var facts = { gpsd: false, devices: 0, mode: 0, satellites: 0 }
+  var rows = splitLines(value)
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i].trim()
+    if (row.charAt(0) !== "{") continue
+    var message = null
+    try { message = JSON.parse(row) } catch (error) { continue }
+    if (!message || typeof message !== "object") continue
+    var kind = text(message["class"])
+    if (kind === "") continue
+    facts.gpsd = true
+
+    if (kind === "DEVICES")
+      facts.devices = message.devices && message.devices.length ? message.devices.length : 0
+    else if (kind === "TPV" && typeof message.mode === "number")
+      facts.mode = message.mode
+    else if (kind === "SKY") {
+      if (typeof message.uSat === "number") facts.satellites = message.uSat
+      else if (message.satellites && message.satellites.length) {
+        var used = 0
+        for (var j = 0; j < message.satellites.length; j++)
+          if (message.satellites[j] && message.satellites[j].used === true) used++
+        facts.satellites = used
+      }
+    }
+  }
+  return facts
+}
+
+// The gpsd device list from /etc/default/gpsd, with the missing paths printed
+// by the probe. Only the absence matters: gpsd's own list answers when it is
+// up, and this only sharpens the rung when it is not.
+function gpsConfigFacts(value) {
+  var rows = splitLines(value)
+  var missing = false
+  for (var i = 0; i < rows.length; i++)
+    if (rows[i].trim() !== "") missing = true
+  return { missing: missing }
+}
+
+// ---- CAT control --------------------------------------------------------
+//
+// ADR 0003: readiness is link health. rigctld must already be running — the
+// widget never starts one and never opens the serial device — and the rig must
+// answer frequency and mode. Meter readings and PTT tests are never signals;
+// PTT state is read only.
+//
+// `input` is:
+//
+//   rigctld     something is running as rigctld
+//   queryable   the rigctl client is installed, so the link can be asked
+//   endpoint    host:port the client talks to
+//   device      { known, path, present, access, held, busy }
+//   reply       { freq, mode, ptt, error }
+//
+// A reply is what proves the link: device facts only explain a reply that
+// failed, because rigctld may hold the device as another user and outrank our
+// own permission check.
+
+var CAT_ENDPOINT = "127.0.0.1:4532"
+
+// The neutral fact set a probe starts from, and the shape catCheck reads.
+function catFacts() {
+  return {
+    rigctld: false,
+    queryable: true,
+    endpoint: CAT_ENDPOINT,
+    device: {
+      known: false,
+      path: "",
+      present: false,
+      access: false,
+      held: false,
+      busy: false
+    },
+    reply: { freq: 0, mode: "", ptt: -1, error: "" }
+  }
+}
+
+function catCheck(input) {
+  var facts = input || {}
+  var reply = facts.reply || {}
+  var device = facts.device || {}
+  var endpoint = text(facts.endpoint) || CAT_ENDPOINT
+
+  if (facts.rigctld !== true)
+    return check(FAIL, "—", "rigctld not running", endpoint)
+
+  if (facts.queryable !== true)
+    return check(UNKNOWN, "—", "rigctl is not installed — cannot query rigctld", endpoint)
+
+  var hz = Number(reply.freq)
+  if (isFinite(hz) && hz > 0) {
+    // A frequency proves the link. Mode and PTT are read for the readout when
+    // the backend supports them; a rig without get_mode is not a broken link.
+    var mode = text(reply.mode)
+    var meta = "rigctld"
+    if (reply.ptt === 0) meta += " · PTT receive"
+    else if (reply.ptt === 1 || reply.ptt === 2 || reply.ptt === 3) meta += " · PTT transmit"
+    return check(OK, formatFrequency(hz), mode === "" ? "MHz" : "MHz · " + mode, meta)
+  }
+
+  // The link failed. The device says why, most specific rung first.
+  if (device.known === true) {
+    var path = text(device.path)
+    if (device.present !== true)
+      return check(FAIL, "—", "serial device " + path + " not present", endpoint)
+    if (device.held !== true && device.access !== true)
+      return check(FAIL, "—", "permission denied on " + path, "add your user to the dialout group")
+    if (device.held !== true && device.busy === true)
+      return check(FAIL, "—", "serial port " + path + " is in use", "another program holds it")
+  }
+
+  var error = text(reply.error)
+  return check(FAIL, "—", "rig is not responding", error === "" ? endpoint : error)
+}
+
+function formatFrequency(hz) {
+  var value = Number(hz)
+  if (!isFinite(value) || value <= 0) return "—"
+  return (value / 1000000).toFixed(3)
+}
+
+// ---- CAT probe: reading rigctld and rigctl ----------------------------
+//
+// `pgrep -a` gives the daemon's command line, which says which device it
+// opened and which port it serves. The device report is the small shell probe
+// in CatProbe.qml: presence, our own access, whether rigctld holds the file,
+// and whether any other process does.
+
+function rigctldFacts(value) {
+  var facts = { pid: 0, device: "", port: 4532 }
+  var rows = splitLines(value)
+  var row = ""
+  for (var r = 0; r < rows.length; r++) {
+    if (rows[r].trim() === "") continue
+    row = rows[r].trim()
+    break
+  }
+  if (row === "") return facts
+
+  var words = row.split(/\s+/)
+  facts.pid = Number(words[0]) || 0
+  for (var i = 1; i < words.length; i++) {
+    var word = words[i]
+    if (word === "-r" || word === "--rig-file") facts.device = text(words[i + 1])
+    else if (word === "-t" || word === "--port") facts.port = Number(words[i + 1]) || 4532
+    else if (word.indexOf("--rig-file=") === 0) facts.device = word.slice(11)
+    else if (word.indexOf("--port=") === 0) facts.port = Number(word.slice(7)) || 4532
+    // getopt also accepts the value attached to the short option.
+    else if (word.indexOf("-r") === 0 && word.length > 2) facts.device = word.slice(2)
+    else if (word.indexOf("-t") === 0 && word.length > 2) facts.port = Number(word.slice(2)) || 4532
+  }
+  // -r also takes a network address or "uh-rig": only an absolute path is a
+  // serial device, and only a serial device can be checked for presence.
+  if (facts.device.charAt(0) !== "/") facts.device = ""
+  return facts
+}
+
+function catDeviceFacts(value, path) {
+  var device = {
+    known: text(path) !== "",
+    path: text(path),
+    present: false,
+    access: false,
+    held: false,
+    busy: false
+  }
+  var rows = splitLines(value)
+  for (var i = 0; i < rows.length; i++) {
+    var split = rows[i].indexOf("=")
+    if (split < 0) continue
+    var key = rows[i].slice(0, split).trim()
+    var raw = rows[i].slice(split + 1).trim()
+
+    if (key === "present") device.present = raw === "1"
+    else if (key === "access") device.access = raw === "1"
+    else if (key === "holds") device.held = raw === "1"
+    else if (key === "others") device.busy = raw !== ""
+  }
+  return device
+}
+
+// rigctl prints the value alone on success, or "RPRT x" for a Hamlib error.
+function rigFrequency(value) {
+  var rows = splitLines(value)
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i].trim()
+    if (/^\d+$/.test(row)) return Number(row)
+  }
+  return 0
+}
+
+function rigMode(value) {
+  var rows = splitLines(value)
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i].trim()
+    if (/^RPRT/.test(row)) continue
+    if (/^[A-Z][A-Z0-9]+$/.test(row)) return row
+  }
+  return ""
+}
+
+// -1 means the rig did not answer the question, not that it is receiving.
+function rigPtt(value) {
+  var rows = splitLines(value)
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i].trim()
+    if (row === "0") return 0
+    if (row === "1" || row === "2" || row === "3") return 1
+  }
+  return -1
+}
+
+function rigError(value) {
+  var rows = splitLines(value)
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i].trim()
+    if (row === "") continue
+    if (/^RPRT\s*-?\d+/.test(row)) return row
+    if (/error\s*=/i.test(row)) return row.replace(/^.*?error\s*=\s*/i, "")
+    if (/timed out|not responding|connection refused|no route to host/i.test(row))
+      return row.replace(/^rigctl:\s*/i, "")
+  }
+  return ""
 }
 
 // ---- Radio audio --------------------------------------------------------

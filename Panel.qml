@@ -38,8 +38,8 @@ Panel {
   readonly property color dim: Util.alpha(foreground, 0.64)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
-  // Radio audio is event-driven, so there is nothing to poll here.
-  // `refreshIntervalSec` gates time and CAT polling only (#1).
+  // The bar widget owns the time and CAT poll; the panel only renders the
+  // snapshot it is handed, so there is nothing to start here.
   function refresh() {}
 
   function assignedNode(role) {
@@ -459,7 +459,7 @@ Panel {
 
         Text {
           width: parent.width
-          text: "Click Radio audio or press a to assign Radio RX and Radio TX · Bar dot: grey unknown · green ready · amber check · red fault"
+          text: "Click Radio audio or press a to assign Radio RX and Radio TX · Middle-click the bar to re-probe · Bar dot: grey unknown · green ready · amber check · red fault"
           textFormat: Text.PlainText
           color: Util.alpha(root.foreground, 0.44)
           font.family: root.fontFamily

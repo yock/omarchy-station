@@ -47,13 +47,20 @@ How far the configured time source has got, reported as the most specific rung:
 no device, daemon not running, no fix, fix without PPS, ready but not selected,
 or disciplining the clock. _Avoid_: GPS status.
 
+**GPS mode**:
+The station's setting for whether GPS timing is expected: `off` (no GPS, NTP is
+enough), `optional` (GPS configured, so losing it warns but a fix without PPS or
+an unselected fix stays green) or `required` (all three warn). _Avoid_: GPS
+enabled, GPS strictness.
+
 **Offset**:
 The residual error between the host clock and a time source it already trusts.
 It is a diagnostic, never a readiness signal. _Avoid_: drift, variance, skew.
 
 **CAT link**:
 The path from the widget to the rig: `rigctld` reachable, serial device present
-and permitted, rig answering frequency and mode. _Avoid_: CAT status.
+and permitted, rig answering frequency — and mode where the backend reports it.
+_Avoid_: CAT status.
 
 **Meter reading**:
 A TX-only diagnostic such as SWR, ALC or forward power. Many rigs expose raw,

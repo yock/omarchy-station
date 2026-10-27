@@ -4,15 +4,15 @@ A station-readiness widget for [Omarchy](https://omarchy.org/) 4.x. One drawn
 station glyph — a mast with a tip ball and signal arcs — and a small
 green/amber/red dot; click it for the expanded readiness panel.
 
-Radio audio is wired: the panel reports the two assigned PipeWire nodes and
-edits the assignments inline. Time sync and CAT control are still stubbed as
-`unknown` (#1), so the panel stays honest about what it has not probed.
+Radio audio, time sync and CAT control are all wired: the panel reports the
+source disciplining the clock, the rig's frequency and mode, and the two
+assigned PipeWire nodes, and it edits the audio assignments inline.
 
 ## Readiness model
 
 The plugin treats station readiness as three independent checks:
 
-| Check | What it will answer |
+| Check | What it answers |
 |---|---|
 | **Time sync** | Which source is disciplining the clock — GPS/PPS or NTP? If GPS is configured, how far did it get: no device, gpsd down, no fix, fix without PPS, ready but not selected? A healthy NTP fallback still counts. |
 | **CAT control** | Is `rigctld` reachable? What frequency/mode is the rig on? Is the serial device present and permitted? |
@@ -52,20 +52,65 @@ lives on the `prototype/station-panel` branch.
 ```
 omarchy-station/
 ├── manifest.json          # plugin id: myockey.station, kind: bar-widget
-├── BarWidget.qml          # station glyph, readiness dot, panel loader, IPC
+├── BarWidget.qml          # station glyph, readiness dot, poll timer, IPC
+├── ProbedCheck.qml        # shared poll state machine for the time and CAT checks
+├── TimeProbe.qml          # chrony/timesyncd source health and gpsd facts
+├── CatProbe.qml           # rigctld discovery, serial facts, f/m/t queries
 ├── AudioProbe.qml         # PipeWire presence, mute and default-output facts
 ├── StationGlyph.qml       # the drawn mast glyph
 ├── Panel.qml              # expanded readiness panel and assignment picker
-├── Readiness.js           # pure state model, audio ladder, codec ranking
-├── test/readiness-test.js # node tests for the model and audio ladder
+├── Readiness.js           # pure state model, ladders, parsers, ranking
+├── test/readiness-test.js # node tests for the model and the ladders
 ├── README.md
 └── LICENSE
 ```
 
-`Readiness.js` has no Qt types, so the same aggregation rules, the radio
-audio ladder and the codec ranking are testable under Node. The QML side only
-renders a snapshot; replacing the whole snapshot keeps the bar, tooltip and
-panel consistent.
+`Readiness.js` has no Qt types, so the same aggregation rules, the three
+ladders, the tool-output parsers and the codec ranking are testable under Node.
+The QML side only renders a snapshot; replacing the whole snapshot keeps the
+bar, tooltip and panel consistent. Time and CAT share `ProbedCheck.qml`'s poll
+state machine, which assembles facts off-screen and commits them in one
+assignment, so a poll in flight never paints a half-updated check.
+
+## Time sync
+
+`chronyc -n tracking` answers first, because a GPS/PPS refclock lives in chrony;
+stock Omarchy's `timedatectl timesync-status` is the fallback, with
+`timedatectl show -p NTPSynchronized` deciding whether the clock is actually
+steered. With GPS configured, `gpspipe -w` supplies the receiver list, the fix
+mode and the satellite count, and `chronyc -n sources` says whether a PPS
+refclock exists and whether it is the selected reference.
+
+The readout is the source that is actually disciplining the clock. The detail is
+the most specific rung: no GPS device, gpsd not running, no fix, fix without
+PPS, ready but not selected, or the fix that is steering it. A fix never forces
+the clock onto GPS, and an offset threshold is never applied — see ADR 0001.
+
+`gpsMode` says what the station expects:
+
+| Value | No device, gpsd down, no fix | Fix without PPS, or ready but not selected |
+|---|---|---|
+| `Off` (default) | `no GPS configured` | — |
+| `Optional` | amber | green |
+| `Required` | amber | amber |
+
+```bash
+omarchy bar set myockey.station gpsMode Optional
+```
+
+## CAT control
+
+The widget attaches to an existing `rigctld`; it never starts one and never
+opens the serial device. `pgrep -a -x rigctld` finds the daemon, its own command
+line says which device and TCP port it was given, and `rigctl -m 2 -r
+127.0.0.1:<port> f` (then `m`, then `t`) reads frequency, mode and PTT state. All
+of it is read-only: nothing is keyed, and no meter reading is requested. See ADR
+0003.
+
+A reply is what proves the link. When the reply fails, the most specific device
+fact explains it: serial device missing, permission denied, or the port held by
+another program. A missing `rigctl` client is reported as unknown rather than
+faulted, because nothing is known to be broken.
 
 ## Radio audio assignments
 
@@ -106,14 +151,13 @@ QML lint (Qt 6):
 tmp=$(mktemp -d)
 ln -s /usr/share/omarchy/shell "$tmp/qs"
 /usr/lib/qt6/bin/qmllint -I "$tmp" -I /usr/lib/qt6/qml \
-  BarWidget.qml AudioProbe.qml StationGlyph.qml Panel.qml
+  BarWidget.qml TimeProbe.qml CatProbe.qml AudioProbe.qml StationGlyph.qml Panel.qml
 rm -rf "$tmp"
 ```
 
 ## Install for local testing
 
-The plugin is not installed or enabled yet. Once you want to see it in the bar,
-install it the same way any third-party plugin is installed:
+Install it the same way any third-party plugin is installed:
 
 ```bash
 omarchy plugin add https://github.com/<you>/omarchy-station.git --enable
@@ -130,36 +174,23 @@ omarchy plugin enable myockey.station --section right
 omarchy-shell shell rescanPlugins
 ```
 
-Remove it with `omarchy plugin remove myockey.station --yes` when you are done.
+A rescan can land mid-write and leave the widget unmounted; `omarchy restart
+shell` is the reliable way to pick up a new probe file. Remove it with
+`omarchy plugin remove myockey.station --yes` when you are done.
 
-## Next probes
+## Next
 
-1. **Time** — read `timedatectl timesync-status` (stock Omarchy) or
-   `chronyc tracking` for the selected reference and sync state; read
-   `gpspipe -w` for TPV/SKY when GPS is configured. Report the most specific
-   rung of the source ladder: no device, gpsd not running, no fix, fix without
-   PPS, ready but not selected, or disciplining. A fix does not force the clock
-   onto GPS — chrony's selected reference is the active source, and a healthy
-   NTP fallback still counts as ready. Do not grade the clock on an offset
-   threshold: a residual measured against a trusted source is not an
-   independent signal.
-2. **CAT** — detect an existing `rigctld`, otherwise optionally start one;
-   poll `rigctl -m 2 f`, `m`, and optionally `t` for PTT state. Do not open the
-   serial device directly if another app already owns it. PTT state is
-   read-only; there is no test button and no keying. SWR, ALC and forward
-   power are TX-only, model-specific and calibration-dependent: read them only
-   as a last-TX diagnostic if the rig reports them, and never let them affect
-   readiness.
-3. **Audio** — done, against ADR 0002. Node presence, mute and Radio TX being
-   the system default output drive the check through Quickshell's native
-   PipeWire service; suspend, sample rate, levels and signal presence are never
-   readiness signals. Stations with a hardware TNC have no host audio path at
-   all and are designed separately (#4).
+1. **Radio audio probe for a hardware TNC** — stations whose audio path lives
+   inside the modem have no host nodes at all, so the audio check needs a
+   separate design (#4).
+2. **Top bar icon** — the station glyph and the status dot are settled; the
+   compact icon treatment is tracked separately (#2).
 
 ## Safety
 
-- No PTT keying in the skeleton or the first probe release. Read-only PTT status
-  is enough until a watchdog-backed keying path exists.
+- The widget never keys the rig. PTT status is read only, and there is no test
+  button until a watchdog-backed keying path exists.
+- The widget never starts `rigctld` and never opens the serial device.
 - No automatic root configuration, no clock stepping, no service restarts from
   the UI.
 - Plugins run unsandboxed inside the long-lived Omarchy shell. Review any plugin

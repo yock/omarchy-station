@@ -14,9 +14,14 @@ BarWidget {
   id: root
   moduleName: "myockey.station"
 
-  // Time and CAT are still stubbed as unknown (#1); radio audio is live.
+  // Time and CAT are polled on one interval; radio audio is event-driven, so
+  // the timer says the same thing to both probes that need it.
+  readonly property int pollIntervalSec: Math.max(1, Number(root.setting("refreshIntervalSec", 5)) || 5)
+
   readonly property var readiness: {
     var snapshot = Readiness.emptySnapshot()
+    snapshot.time = timeProbe.check
+    snapshot.cat = catProbe.check
     snapshot.audio = audioProbe.check
     return snapshot
   }
@@ -48,6 +53,15 @@ BarWidget {
     txName: root.setting("radioTxNode", "")
   }
 
+  TimeProbe {
+    id: timeProbe
+    gpsMode: String(root.setting("gpsMode", "Off"))
+  }
+
+  CatProbe {
+    id: catProbe
+  }
+
   // The glyph is drawn (StationGlyph.qml), not set in an icon font. 18px is
   // the optical canvas it was tuned on: big enough for the arcs to separate
   // from the ball, still inside the bar's 21px status slot.
@@ -65,7 +79,20 @@ BarWidget {
   }
 
   function refresh() {
+    timeProbe.refresh()
+    catProbe.refresh()
     if (panelLoader.item && panelLoader.item.refresh) panelLoader.item.refresh()
+  }
+
+  // The bar is the only place the poll lives: the panel renders the snapshot
+  // it is handed, and a poll that ran per surface would disagree across
+  // monitors.
+  Timer {
+    interval: root.pollIntervalSec * 1000
+    running: true
+    repeat: true
+    triggeredOnStart: true
+    onTriggered: root.refresh()
   }
 
   // Shape contract for shell.summon/hide/toggle routing. The bar tracks the
@@ -152,7 +179,7 @@ BarWidget {
     function show(): void { root.open() }
     function hide(): void { root.close() }
     function toggle(): void { root.togglePanel() }
-    function refresh(): void { root.refresh() }
+    function refresh(): void { root.broadcast("refresh") }
     function status(): string { return JSON.stringify(root.readiness) }
   }
 }
