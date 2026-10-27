@@ -186,7 +186,12 @@ Panel {
     owner: root.barIdentity
     bar: root.bar
     open: root.opened
-    centerOnBar: true
+    // Follow the widget icon, not the bar's midpoint: a widget lives in the
+    // left, centre or right section, and its panel should read as belonging to
+    // that section. On the right the card is clamped to the screen margin, so
+    // it sits pinned to the right edge instead of under the clock. Centring on
+    // the bar is only right for the centre-section panels (clock, weather).
+    centerOnBar: false
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(520))
     contentHeight: panel.fittedContentHeight(content.implicitHeight)
