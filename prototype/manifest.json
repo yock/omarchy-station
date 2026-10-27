@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "id": "myockey.station-prototype",
+  "name": "Station prototype",
+  "version": "0.0.1",
+  "author": "myockey",
+  "license": "MIT",
+  "description": "PROTOTYPE: three station readiness panel layouts. Not for release.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Station prototype",
+    "description": "PROTOTYPE: A triage list, B instrument panel, C guided flow.",
+    "category": "System",
+    "aliases": [
+      "station prototype",
+      "station variants"
+    ],
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "variant": "A",
+      "sample": "red"
+    },
+    "schema": [
+      {
+        "key": "variant",
+        "type": "enum",
+        "label": "Panel variant",
+        "options": ["A", "B", "C"],
+        "defaultValue": "A"
+      },
+      {
+        "key": "sample",
+        "type": "enum",
+        "label": "Sample state",
+        "options": ["grey", "green", "gps", "gps-ready", "gps-no-pps", "no-fix", "gpsd-down", "no-device", "red"],
+        "defaultValue": "red"
+      }
+    ]
+  }
+}
