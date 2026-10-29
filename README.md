@@ -309,17 +309,37 @@ ln -s /usr/share/omarchy/shell "$tmp/qs"
 rm -rf "$tmp"
 ```
 
-## Install for local testing
+## Install
 
-Install it the same way any third-party plugin is installed:
+### From the registry
+
+Once the listing is live:
 
 ```bash
-omarchy plugin add https://github.com/<you>/omarchy-station.git --enable
-omarchy bar move yock.station-readiness right
+omarchy plugin add yock/station-readiness
+omarchy plugin enable yock.station-readiness --section right
 ```
 
-For local iteration before the repository exists, copy the directory into the
-plugin directory and enable it explicitly:
+Registry installs land **disabled**. Adding a plugin only stages it on disk; it
+does not run until you enable it, and that is the consent step — a plugin
+executes as arbitrary, unsandboxed code inside the long-lived shell, so read it
+before turning it on.
+
+Registry installs need an Omarchy CLI that understands `handle/name`. The
+4.0.0.alpha CLI accepts only a git URL, so use the source install below on that
+version.
+
+### From source
+
+```bash
+omarchy plugin add https://github.com/yock/omarchy-station.git
+omarchy plugin enable yock.station-readiness --section right
+```
+
+### Local development
+
+Working on the widget itself, copy this checkout into place instead of cloning
+it into the plugin directory:
 
 ```bash
 mkdir -p ~/.config/omarchy/plugins
@@ -329,8 +349,13 @@ omarchy-shell shell rescanPlugins
 ```
 
 A rescan can land mid-write and leave the widget unmounted; `omarchy restart
-shell` is the reliable way to pick up a new probe file. Remove it with
-`omarchy plugin remove yock.station-readiness --yes` when you are done.
+shell` is the reliable way to pick up a new probe file.
+
+### Remove
+
+```bash
+omarchy plugin remove yock.station-readiness --yes
+```
 
 ## Next
 
