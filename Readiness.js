@@ -140,6 +140,51 @@ function declares(value, path) {
   return declared === PATH_BOTH || declared === path
 }
 
+// The declaration's label for the panel's control and picker. Whatever casing
+// or alias shell.json holds, the manifest's label is what the operator sees.
+function stationPathLabel(value) {
+  var path = stationPathsOf(value)
+  if (path === PATH_TNC) return "TNC"
+  if (path === PATH_BOTH) return "Both"
+  return STATION_PATH_DEFAULT
+}
+
+function stationPathConsequence(path) {
+  if (path === PATH_TNC)
+    return "a modem carries the audio and keys the rig; only its transport is graded"
+  if (path === PATH_BOTH) return "every declared path must be ready"
+  return "CAT control and radio audio over the host's soundcard"
+}
+
+// The picker's rows: the manifest's values, in its order, with the consequence
+// that value has for readiness. The panel is where the declaration is made, so
+// a station can switch between Host audio, TNC and Both without the CLI.
+function stationPathRows(current) {
+  var active = stationPathsOf(current)
+  var rows = []
+  for (var i = 0; i < STATION_PATH_OPTIONS.length; i++) {
+    var value = STATION_PATH_OPTIONS[i].value
+    var path = stationPathsOf(value)
+    rows.push({
+      kind: "paths",
+      selectable: true,
+      value: value,
+      label: value,
+      description: stationPathConsequence(path),
+      assigned: path === active
+    })
+  }
+  return rows
+}
+
+// The cursor opens on the declaration the station is set to.
+function stationPathCursor(current) {
+  var rows = stationPathRows(current)
+  for (var i = 0; i < rows.length; i++)
+    if (rows[i].assigned === true) return i
+  return 0
+}
+
 function pathChecks(path) {
   return path === PATH_TNC ? ["time", "tnc"] : ["time", "cat", "audio"]
 }

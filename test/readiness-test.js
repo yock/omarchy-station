@@ -113,6 +113,24 @@ assert.equal(R.declares("Both", "tnc"), true)
 assert.equal(R.declares("Host audio", "tnc"), false)
 assert.equal(R.declares("TNC", "host"), false)
 assert.equal(R.stationPathSettingKey(), "stationPaths")
+assert.equal(R.stationPathLabel("Host audio"), "Host audio")
+assert.equal(R.stationPathLabel("tnc"), "TNC")
+assert.equal(R.stationPathLabel("Both"), "Both")
+assert.equal(R.stationPathLabel("nonsense"), "Host audio")
+
+// The panel's declaration picker: one row per manifest value, in order, each
+// carrying the consequence that value has for readiness. The current value is
+// marked and the cursor opens on it.
+const pathRows = R.stationPathRows("TNC")
+assert.equal(pathRows.map(function(row) { return row.value }).join("|"), "Host audio|TNC|Both")
+assert.equal(pathRows[0].assigned, false)
+assert.equal(pathRows[1].assigned, true)
+assert.equal(pathRows[2].assigned, false)
+assert.equal(pathRows[1].kind, "paths")
+for (const row of pathRows) assert.notEqual(row.description, "")
+assert.equal(R.stationPathCursor("TNC"), 1)
+assert.equal(R.stationPathCursor("Both"), 2)
+assert.equal(R.stationPathCursor("nonsense"), 0)
 
 // Host-only: the TNC check is na, so it is counted and drawn nowhere.
 const hostOnly = stationWith()
@@ -1480,6 +1498,10 @@ assert.equal(pathsEntry.type, "enum")
 assert.equal(pathsEntry.defaultValue, "Host audio")
 assert.equal(
   R.STATION_PATH_OPTIONS.map(function(option) { return option.value }).join("|"),
+  pathsEntry.options.join("|")
+)
+assert.equal(
+  R.stationPathRows("Host audio").map(function(row) { return row.value }).join("|"),
   pathsEntry.options.join("|")
 )
 assert.equal(R.stationPathSettingKey(), pathsEntry.key)

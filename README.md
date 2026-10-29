@@ -13,7 +13,8 @@ GPS and TNC settings inline.
 
 A station declares the paths it expects — **Host audio**, **TNC**, or **Both** —
 and readiness is the worst of the checks those declarations make applicable.
-The declaration is a setting, never inferred from what is plugged in.
+The declaration is a setting, never inferred from what is plugged in. Change it
+in the panel by clicking **Station paths** or pressing `s`.
 
 | Check | Station path | What it answers |
 |---|---|---|
@@ -92,7 +93,7 @@ which stays the source of truth for type, accepted values and default.
 |---|---|---|---|---|
 | `refreshIntervalSec` | integer | 1–60 | `5` | How often the time, CAT and TNC checks are re-probed, in seconds; radio audio and Bluetooth state update live. CLI-only: `omarchy bar set myockey.station refreshIntervalSec 10`. |
 | `gpsMode` | enum | `Off`, `Optional`, `Required` | `Off` | Whether GPS timing is expected, and how hard its loss bites. Editable from the panel: click Time sync or press `g`. The consequences are the [Time sync policy matrix](#time-sync), not restated here. |
-| `stationPaths` | enum | `Host audio`, `TNC`, `Both` | `Host audio` | Which station paths the station expects. `Host audio` grades CAT control and radio audio; `TNC` grades the modem transport and makes CAT and radio audio not applicable; `Both` requires every declared path to be ready. CLI-only: `omarchy bar set myockey.station stationPaths Both`. |
+| `stationPaths` | enum | `Host audio`, `TNC`, `Both` | `Host audio` | Which station paths the station expects. `Host audio` grades CAT control and radio audio; `TNC` grades the modem transport and makes CAT and radio audio not applicable; `Both` requires every declared path to be ready. Editable from the panel: click Station paths or press `s`. CLI: `omarchy bar set myockey.station stationPaths Both`. |
 | `radioRxNode` | string | any PipeWire source `node.name`, or `(empty)` | `(empty)` | The source a digital-mode app captures the rig's audio from. Editable in the audio picker: click Radio audio or press `a`. |
 | `radioTxNode` | string | any PipeWire sink `node.name`, or `(empty)` | `(empty)` | The sink a digital-mode app plays tones into. Editable in the audio picker: click Radio audio or press `a`. |
 | `tncTransport` | string | an absolute serial device path, a Bluetooth address, or `(empty)` | `(empty)` | The modem's transport. Classified by shape and graded on holdership. Editable in the TNC picker: click TNC transport or press `t`. |
@@ -230,7 +231,9 @@ reported as unknown rather than faulted, because nothing is known to be broken.
 
 A TNC path puts the modem between the host and the rig: the modem carries the
 audio and keys the transmitter itself, so there is no host audio role and often
-no CAT link to check. Declare the path and assign the transport:
+no CAT link to check. Click **Station paths** in the panel, or press `s`, and
+choose `TNC` or `Both`; the TNC transport picker then appears as the last cell.
+The same declaration can be set from the CLI:
 
 ```bash
 omarchy bar set myockey.station stationPaths TNC

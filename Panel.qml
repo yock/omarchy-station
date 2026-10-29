@@ -121,6 +121,16 @@ Panel {
     return root.slotPickerRows(list)
   }
 
+  // The declaration picker is the panel's station-paths control: choosing a
+  // value changes which checks are applicable and therefore how wide the row
+  // is. Like GPS mode, it applies on the choice and collapses.
+  readonly property var pathsPickerModel: {
+    var list = [{ kind: "header", selectable: false, text: "Station paths" }]
+    var options = Readiness.stationPathRows(root.stationPathsSetting)
+    for (var i = 0; i < options.length; i++) list.push(options[i])
+    return root.slotPickerRows(list)
+  }
+
   // The GPS picker edits a setting, not a node: choosing a mode applies it,
   // and Escape collapses the picker, so there is no Clear or Done row.
   readonly property var gpsPickerModel: {
@@ -136,7 +146,8 @@ Panel {
   readonly property var tncPickerModel:
     root.slotPickerRows(Readiness.tncTransportRows(root.tncCandidates, root.tncSetting))
 
-  readonly property var pickerModel: root.pickerKind === "gps" ? root.gpsPickerModel
+  readonly property var pickerModel: root.pickerKind === "paths" ? root.pathsPickerModel
+    : root.pickerKind === "gps" ? root.gpsPickerModel
     : root.pickerKind === "tnc" ? root.tncPickerModel
     : root.pickerKind === "audio" ? root.audioPickerModel : []
 
@@ -159,6 +170,12 @@ Panel {
   function toggleAudioPicker() {
     if (root.pickerKind === "audio") root.closePicker()
     else root.openPicker("audio", 0)
+  }
+
+  // The cursor opens on the declared value.
+  function togglePathsPicker() {
+    if (root.pickerKind === "paths") root.closePicker()
+    else root.openPicker("paths", Readiness.stationPathCursor(root.stationPathsSetting))
   }
 
   // The cursor opens on the mode the station is set to.
@@ -219,6 +236,10 @@ Panel {
       else root.assignAudio(row.role, "")
       return
     }
+    if (row.kind === "paths") {
+      root.applyStationPaths(row.value)
+      return
+    }
     if (row.kind === "gps") {
       root.applyGpsMode(row.value)
       return
@@ -228,6 +249,16 @@ Panel {
       return
     }
     root.assignAudio(row.role, row.name)
+  }
+
+  // The declaration is the setting that decides the panel's shape: applying it
+  // makes checks applicable or not, and the bar widget's snapshot is rebuilt
+  // from the new value immediately.
+  function applyStationPaths(value) {
+    var samePath = Readiness.stationPathsOf(value) === Readiness.stationPathsOf(root.stationPathsSetting)
+    root.closePicker()
+    if (samePath) return
+    root.assignSetting(Readiness.stationPathSettingKey(), String(value))
   }
 
   // Applying the mode already set writes nothing; a different one persists,
@@ -309,6 +340,7 @@ Panel {
         if (t === "a" || t === "A") root.toggleAudioPicker()
         else if (t === "g" || t === "G") root.toggleGpsPicker()
         else if (t === "t" || t === "T") root.toggleTncPicker()
+        else if (t === "s" || t === "S") root.togglePathsPicker()
       }
       onCloseRequested: {
         // Escape collapses the picker before it closes the panel.
@@ -354,14 +386,24 @@ Panel {
 
           Item { Layout.fillWidth: true }
 
+          // The declaration is visible here, not inferred from the devices
+          // below: click it (or press s) to switch the station between Host
+          // audio, TNC and Both.
           Text {
-            text: "STATION"
+            Layout.alignment: Qt.AlignTop
+            text: "STATION PATHS · "
+              + Readiness.stationPathLabel(root.stationPathsSetting).toUpperCase()
+              + " ▾"
             textFormat: Text.PlainText
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
-            font.letterSpacing: 1.4
+            font.letterSpacing: 1.2
             font.bold: true
+            TapHandler {
+              cursorShape: Qt.PointingHandCursor
+              onTapped: root.togglePathsPicker()
+            }
           }
         }
 
@@ -575,7 +617,7 @@ Panel {
 
         Text {
           width: parent.width
-          text: "Click Time sync or press g to set GPS mode · Click Radio audio or press a to assign Radio RX and Radio TX · Click TNC transport or press t to assign a modem transport · Middle-click the bar to re-probe · Bar dot: grey unknown · green ready · amber check · red fault"
+          text: "Click Station paths or press s to choose Host audio, TNC or Both · Click Time sync or press g to set GPS mode · Click Radio audio or press a to assign Radio RX and Radio TX · Click TNC transport or press t to assign a modem transport · Middle-click the bar to re-probe · Bar dot: grey unknown · green ready · amber check · red fault"
           textFormat: Text.PlainText
           color: Util.alpha(root.foreground, 0.44)
           font.family: root.fontFamily

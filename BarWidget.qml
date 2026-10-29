@@ -53,6 +53,7 @@ BarWidget {
       && Readiness.gpsModeOf(value) !== Readiness.gpsModeOf(root.setting(key, "Off"))
     var transportChanged = key === Readiness.tncSettingKey()
       && !Readiness.sameTncTransport(value, root.setting(key, ""))
+    var pathsChanged = key === Readiness.stationPathSettingKey()
 
     var entry = { id: root.moduleName }
     for (var existing in root.settings) if (existing !== "id") entry[existing] = root.settings[existing]
@@ -78,6 +79,10 @@ BarWidget {
       tncProbe.invalidate()
       tncProbe.refresh()
     }
+
+    // A newly declared path should not wait out refreshIntervalSec for its
+    // check to answer. Radio audio is live either way.
+    if (pathsChanged) root.refresh()
   }
 
   // Node assignments are settings too; the single writer keeps the
