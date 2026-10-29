@@ -108,8 +108,8 @@ mode and the satellite count, and `chronyc -n sources` says whether a PPS
 refclock exists and whether it is the selected reference.
 
 The readout is the source that is actually disciplining the clock. The detail is
-the most specific rung: gpsd is not installed, no GPS device, gpsd not running,
-no fix, fix without PPS, ready but not selected, or the fix that is steering it.
+the most specific rung: gpsd missing, no GPS device, gpsd down, no fix, fix
+without PPS, GPS not selected, or the fix that is steering it.
 A fix never forces the clock onto GPS, and an offset threshold is never applied —
 see ADR 0001.
 
@@ -200,7 +200,7 @@ those. Installing packages and switching time daemons cannot be automated from a
 udev worker, and this plugin does not try.
 
 If the GPS is only used for position, `gpsd` alone is enough: the check reports
-`3D fix · no PPS` or `GPS ready · not selected` and stays green under
+`3D fix · no PPS` or `GPS not selected` and stays green under
 `gpsMode=Optional`.
 
 ## CAT control
@@ -222,10 +222,10 @@ A reply is what proves the link. When the reply fails, the most specific device
 fact explains it: serial device missing, permission denied, or the port held by
 another program. `pgrep` exits the same way for a stopped daemon and for a
 package that was never installed, so the probe asks `command -v rigctld` before
-it blames the daemon: a missing package reads `hamlib is not installed` with an
-install hint, and a package that is present but idle reads `rigctld not
-running`. Both fail the link. A missing `rigctl` client while `rigctld` runs is
-reported as unknown rather than faulted, because nothing is known to be broken.
+it blames the daemon: a missing package reads `no hamlib` with an install hint,
+and a package that is present but idle reads `rigctld down`. Both fail the
+link. A missing `rigctl` client while `rigctld` runs is reported as unknown
+rather than faulted, because nothing is known to be broken.
 
 ## TNC transport
 
@@ -247,12 +247,11 @@ The check grades the transport and stops there. The probe resolves the path
 existence, character-device-ness and permission; a scan of `/proc` names a
 process holding the port. A free port is opened read-only and closed again; a
 held port is never opened, and nothing is ever written to a modem. A held port
-reads **ready** and
-names the holder — "in use by `direwolf` (pid 4711)" — because a process using
-the declared modem is the strongest evidence the station works. A legacy
-`/dev/ttyS*` port warns: it exists and opens whether or not a modem is attached,
-so presence there proves nothing. Bluetooth is graded at paired and connected.
-See ADR 0005.
+reads **ready** and names the holder — "in use: `direwolf`", with its pid in the
+meta line — because a process using the declared modem is the strongest
+evidence the station works. A legacy `/dev/ttyS*` port warns: it exists and
+opens whether or not a modem is attached, so presence there proves nothing.
+Bluetooth is graded at paired and connected. See ADR 0005.
 
 No transport proves KISS: the check never claims it on the panel. Click the TNC
 column or press `t` to open the inline transport picker. It lists serial devices

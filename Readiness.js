@@ -249,7 +249,7 @@ function capitalizeFirst(value) {
 //   gps         { gpsd, installed, missing, devices, mode, satellites, pps,
 //                 selected }
 //
-// Rungs, most specific first: no device, gpsd not running, no fix, fix
+// Rungs, most specific first: no device, gpsd down, no fix, fix
 // without PPS, ready but not selected, disciplining. A fix never forces the
 // clock onto GPS — the daemon's selected reference decides the readout — and
 // a healthy NTP fallback is still a ready clock.
@@ -304,7 +304,7 @@ function gpsModeCursor(current) {
 // The detail names the setting rather than the absent hardware: with the mode
 // off there is nothing missing, only a configuration choice.
 var TIME_GPS_OFF = "GPS mode off"
-var TIME_DISCIPLINED = "clock disciplined"
+var TIME_DISCIPLINED = "disciplined"
 var TIME_GPS_LOST = "GPS lost"
 
 function gpsModeOf(value) {
@@ -363,14 +363,14 @@ function timeCheck(input) {
   // Neither daemon answered: nothing is carrying the clock, which outranks
   // every source rung because no rung can be reached without a daemon.
   if (daemon === "none")
-    return check(FAIL, "None", "no time source", "clock free-running")
+    return check(FAIL, "None", "no time source", "free-running")
 
   // A daemon that is up but not steering the clock is a fault, not a "cannot
   // answer": the station has no trustworthy UTC right now.
   if (facts.synced !== true) {
     var label = daemonLabel(daemon)
     var server = text(facts.server)
-    return check(FAIL, "None", "clock not synchronised",
+    return check(FAIL, "None", "clock unsynced",
       server === "" ? label : label + " · " + server)
   }
 
@@ -387,10 +387,10 @@ function timeCheck(input) {
   // reached until it is installed. Then a configured device that is gone is
   // more specific than a daemon that is not running.
   if (gps.gpsd !== true) {
-    if (gps.installed === false) return check(WARN, readout, "gpsd is not installed", lostMeta)
+    if (gps.installed === false) return check(WARN, readout, "gpsd missing", lostMeta)
     return gps.missing === true
       ? check(WARN, readout, "no GPS device", lostMeta)
-      : check(WARN, readout, "gpsd not running", lostMeta)
+      : check(WARN, readout, "gpsd down", lostMeta)
   }
 
   // gpsd's own receiver list is authoritative while it is up.
@@ -408,7 +408,7 @@ function timeCheck(input) {
         : (gps.selected === true ? "NMEA timing" : TIME_DISCIPLINED))
 
   if (gps.selected !== true)
-    return check(policy, "NTP", "GPS ready · not selected",
+    return check(policy, "NTP", "GPS not selected",
       required ? "GPS required" : TIME_DISCIPLINED)
 
   return check(OK, "GPS", fix + " · PPS", TIME_DISCIPLINED)
@@ -574,13 +574,13 @@ function catCheck(input) {
   // it was never installed, and "not running" would send the operator after a
   // daemon that is not there. The package is what they have to add.
   if (facts.installed === false)
-    return check(FAIL, "—", "hamlib is not installed", "install hamlib")
+    return check(FAIL, "—", "no hamlib", "install hamlib")
 
   if (facts.rigctld !== true)
-    return check(FAIL, "—", "rigctld not running", endpoint)
+    return check(FAIL, "—", "rigctld down", endpoint)
 
   if (facts.queryable !== true)
-    return check(UNKNOWN, "—", "rigctl is not installed — cannot query rigctld", endpoint)
+    return check(UNKNOWN, "—", "no rigctl", endpoint)
 
   var hz = Number(reply.freq)
   if (isFinite(hz) && hz > 0) {
@@ -597,15 +597,15 @@ function catCheck(input) {
   if (device.known === true) {
     var path = text(device.path)
     if (device.present !== true)
-      return check(FAIL, "—", "serial device " + path + " not present", endpoint)
+      return check(FAIL, "—", "missing " + path, endpoint)
     if (device.held !== true && device.access !== true)
-      return check(FAIL, "—", "permission denied on " + path, "add your user to the dialout group")
+      return check(FAIL, "—", "permission denied", "dialout · " + path)
     if (device.held !== true && device.busy === true)
-      return check(FAIL, "—", "serial port " + path + " is in use", "another program holds it")
+      return check(FAIL, "—", "in use: " + path, "another program")
   }
 
   var error = text(reply.error)
-  return check(FAIL, "—", "rig is not responding", error === "" ? endpoint : error)
+  return check(FAIL, "—", "no rig reply", error === "" ? endpoint : error)
 }
 
 function formatFrequency(hz) {
@@ -793,7 +793,7 @@ function tncCheck(input) {
   var kind = tncTransportKind(assigned)
 
   if (assigned === "")
-    return check(UNKNOWN, "—", "No TNC transport assigned", "choose a transport")
+    return check(UNKNOWN, "—", "no transport", "choose one")
 
   if (kind === "bluetooth") {
     var bluetooth = facts.bluetooth || {}
@@ -803,25 +803,25 @@ function tncCheck(input) {
     // The address is assigned but the device is not in BlueZ's list: saying it
     // is unpaired would be a factual claim the probe cannot make.
     if (bluetooth.missing === true)
-      return check(FAIL, readout, "Bluetooth device not found", address)
+      return check(FAIL, readout, "BT not found", address)
     if (bluetooth.paired !== true)
-      return check(FAIL, readout, "Bluetooth device is not paired", address)
+      return check(FAIL, readout, "not paired", address)
     if (bluetooth.connected !== true)
-      return check(FAIL, readout, "Bluetooth device is not connected", address)
-    return check(OK, readout, "connected over Bluetooth", address)
+      return check(FAIL, readout, "not connected", address)
+    return check(OK, readout, "connected", address)
   }
 
   if (kind !== "serial")
-    return check(FAIL, assigned, "not a device path or Bluetooth address", "")
+    return check(FAIL, assigned, "bad transport", "")
 
   var serial = facts.serial || {}
   var transport = tncSerialKind(assigned)
 
   if (serial.present !== true)
-    return check(FAIL, assigned, "serial device " + assigned + " not present", transport)
+    return check(FAIL, assigned, "device missing", transport)
 
   if (serial.charDevice !== true)
-    return check(FAIL, assigned, assigned + " is not a character device", transport)
+    return check(FAIL, assigned, "not a tty", transport)
 
   // Held outranks permission and the onboard warning: another process using
   // the port is the strongest evidence the station works, and the port must
@@ -830,22 +830,21 @@ function tncCheck(input) {
   if (holderPid > 0) {
     var holderName = text(serial.holderName)
     var holder = holderName === ""
-      ? "in use by pid " + holderPid
-      : "in use by " + holderName + " (pid " + holderPid + ")"
+      ? "in use: pid " + holderPid
+      : "in use: " + holderName
     return check(OK, assigned, holder, "pid " + holderPid)
   }
 
   if (serial.readable !== true)
-    return check(FAIL, assigned, "permission denied on " + assigned, "add your user to the dialout group")
+    return check(FAIL, assigned, "permission denied", "add to dialout")
 
   if (serial.onboard === true)
-    return check(WARN, assigned,
-      "onboard serial port — cannot tell whether a modem is attached", "onboard serial")
+    return check(WARN, assigned, "onboard port", "modem unknown")
 
   if (serial.opens !== true)
-    return check(FAIL, assigned, "cannot open " + assigned + " read-only", transport)
+    return check(FAIL, assigned, "cannot open", transport)
 
-  return check(OK, assigned, "no program is using it", transport)
+  return check(OK, assigned, "port free", transport)
 }
 
 // The serial report is the small shell probe in TncProbe.qml: presence,
@@ -1057,8 +1056,8 @@ function tncTransportCursor(candidates, current) {
 // missing node is named by its assignment so the operator can see which one
 // went away; a missing assignment reads "—".
 
-var AUDIO_BOTH_UNASSIGNED = "Radio RX and TX not assigned"
-var AUDIO_CODEC_DETECTED = "USB audio codec detected — assign it"
+var AUDIO_BOTH_UNASSIGNED = "RX/TX unassigned"
+var AUDIO_CODEC_DETECTED = "codec detected"
 
 // Both ends of an assignment must agree on which setting each role writes.
 var AUDIO_SETTING_KEYS = {
@@ -1106,32 +1105,32 @@ function audioCheck(input) {
     var detect = rx.radioCandidate === true && tx.radioCandidate === true
     problems.push({ state: UNKNOWN, detail: detect ? AUDIO_CODEC_DETECTED : AUDIO_BOTH_UNASSIGNED })
   } else if (rxName === "") {
-    problems.push({ state: UNKNOWN, detail: "Radio RX not assigned" })
+    problems.push({ state: UNKNOWN, detail: "RX unassigned" })
   } else if (txName === "") {
-    problems.push({ state: UNKNOWN, detail: "Radio TX not assigned" })
+    problems.push({ state: UNKNOWN, detail: "TX unassigned" })
   }
 
   // Absence fails: the configured path is gone. Mutes warn: one toggle from
   // ready. On-air output warns: the station still works a digital mode.
   if (rxName !== "" && rx.present !== true) {
-    problems.push({ state: FAIL, detail: 'Radio RX "' + rxName + '" is not present' })
+    problems.push({ state: FAIL, detail: "RX not present" })
   }
   if (txName !== "" && tx.present !== true) {
-    problems.push({ state: FAIL, detail: 'Radio TX "' + txName + '" is not present' })
+    problems.push({ state: FAIL, detail: "TX not present" })
   }
   if (rxName !== "" && rx.present === true && rx.muted === true) {
-    problems.push({ state: WARN, detail: "Radio RX is muted — nothing will decode" })
+    problems.push({ state: WARN, detail: "RX muted" })
   }
   if (txName !== "" && tx.present === true && tx.muted === true) {
-    problems.push({ state: WARN, detail: "Radio TX is muted — nothing will transmit" })
+    problems.push({ state: WARN, detail: "TX muted" })
   }
   if (txName !== "" && tx.present === true && tx.isDefault === true) {
-    problems.push({ state: WARN, detail: "Radio TX is the default output — other sounds go on air" })
+    problems.push({ state: WARN, detail: "TX default output" })
   }
 
   if (problems.length === 0) {
     var readyMeta = txName !== "" && txName !== rxName ? "TX: " + audioNodeLabel(tx) : ""
-    return check(OK, readout, "Radio RX and TX ready", readyMeta)
+    return check(OK, readout, "RX/TX ready", readyMeta)
   }
 
   // The highest broken rung sets the state; the rest ride along in meta.
@@ -1141,7 +1140,7 @@ function audioCheck(input) {
     var also = []
     for (var i = 1; i < problems.length; i++) also.push(problems[i].detail)
     meta = "also: " + also.join(" · ")
-  } else if (txName !== "" && tx.present === true && txName !== rxName) {
+  } else if (txName !== "" && txName !== rxName) {
     meta = "TX: " + audioNodeLabel(tx)
   }
   return check(first.state, readout, first.detail, meta)

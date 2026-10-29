@@ -451,6 +451,9 @@ Panel {
                 elide: Text.ElideRight
               }
 
+              // The four-column row is narrow by design. Long device paths
+              // and error strings wrap rather than truncate; the line cap
+              // keeps one pathological answer from growing the panel forever.
               Text {
                 Layout.fillWidth: true
                 text: column.modelData.detail
@@ -458,6 +461,8 @@ Panel {
                 color: root.dim
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
+                wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+                maximumLineCount: 3
                 elide: Text.ElideRight
               }
 
@@ -469,6 +474,8 @@ Panel {
                 color: Util.alpha(root.foreground, 0.44)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
+                wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+                maximumLineCount: 2
                 elide: Text.ElideRight
               }
 
@@ -617,7 +624,7 @@ Panel {
 
         Text {
           width: parent.width
-          text: "Click Station paths or press s to choose Host audio, TNC or Both · Click Time sync or press g to set GPS mode · Click Radio audio or press a to assign Radio RX and Radio TX · Click TNC transport or press t to assign a modem transport · Middle-click the bar to re-probe · Bar dot: grey unknown · green ready · amber check · red fault"
+          text: "Click a column · s paths · g GPS · a audio · t TNC · middle-click re-probe"
           textFormat: Text.PlainText
           color: Util.alpha(root.foreground, 0.44)
           font.family: root.fontFamily

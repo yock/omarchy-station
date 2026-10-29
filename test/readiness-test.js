@@ -32,9 +32,9 @@ assert.equal(R.notApplicable().detail, "Not applicable")
 assert.equal(R.label(R.NA), "Not applicable")
 
 const allReady = {
-  time: R.check(R.OK, "NTP", "GPS mode off", "clock disciplined"),
+  time: R.check(R.OK, "NTP", "GPS mode off", "disciplined"),
   cat: R.check(R.OK, "14.074", "MHz USB · FT-891", "rigctld · PTT receive"),
-  audio: R.check(R.OK, "USB codec", "Radio RX and TX ready", "TX: USB codec"),
+  audio: R.check(R.OK, "USB codec", "RX/TX ready", "TX: USB codec"),
   tnc: R.notApplicable()
 }
 assert.equal(R.overall(allReady), R.OK)
@@ -50,9 +50,9 @@ assert.equal(R.verdict(R.OK), "Station ready")
 assert.equal(R.verdictDetail(R.OK, R.counts(allReady), allReady, "Host audio"), "Ready for host audio")
 
 const oneWarning = {
-  time: R.check(R.OK, "NTP", "GPS mode off", "clock disciplined"),
+  time: R.check(R.OK, "NTP", "GPS mode off", "disciplined"),
   cat: R.check(R.WARN, "—", "rig not responding", ""),
-  audio: R.check(R.OK, "USB codec", "Radio RX and TX ready", "TX: USB codec"),
+  audio: R.check(R.OK, "USB codec", "RX/TX ready", "TX: USB codec"),
   tnc: R.notApplicable()
 }
 assert.equal(R.overall(oneWarning), R.WARN)
@@ -64,8 +64,8 @@ assert.equal(
 
 const oneFailure = {
   time: R.check(R.WARN, "NTP", "GPS · no fix", "GPS lost"),
-  cat: R.check(R.FAIL, "—", "rigctld not running", ""),
-  audio: R.check(R.OK, "USB codec", "Radio RX and TX ready", "TX: USB codec"),
+  cat: R.check(R.FAIL, "—", "rigctld down", ""),
+  audio: R.check(R.OK, "USB codec", "RX/TX ready", "TX: USB codec"),
   tnc: R.notApplicable()
 }
 assert.equal(R.overall(oneFailure), R.FAIL)
@@ -78,9 +78,9 @@ assert.match(R.tooltip(oneFailure), /Station: Not ready/)
 assert.match(R.tooltip(oneFailure), /CAT control: Fault/)
 
 const partial = {
-  time: R.check(R.OK, "NTP", "GPS mode off", "clock disciplined"),
+  time: R.check(R.OK, "NTP", "GPS mode off", "disciplined"),
   cat: R.check(R.UNKNOWN, "—", "Not probed yet", ""),
-  audio: R.check(R.OK, "USB codec", "Radio RX and TX ready", "TX: USB codec"),
+  audio: R.check(R.OK, "USB codec", "RX/TX ready", "TX: USB codec"),
   tnc: R.notApplicable()
 }
 assert.equal(R.overall(partial), R.UNKNOWN)
@@ -94,9 +94,9 @@ assert.equal(R.counts(partial).unknown, 1)
 
 function stationWith(overrides) {
   const base = {
-    time: R.check(R.OK, "NTP", "GPS mode off", "clock disciplined"),
+    time: R.check(R.OK, "NTP", "GPS mode off", "disciplined"),
     cat: R.check(R.OK, "14.074", "MHz · USB", "rigctld · PTT receive"),
-    audio: R.check(R.OK, "USB codec", "Radio RX and TX ready", "TX: USB codec"),
+    audio: R.check(R.OK, "USB codec", "RX/TX ready", "TX: USB codec"),
     tnc: R.notApplicable()
   }
   for (const key in overrides || {}) base[key] = overrides[key]
@@ -144,7 +144,7 @@ assert.equal(R.rows(hostOnly).map(function(row) { return row.key }).join("|"), "
 const tncOnly = stationWith({
   cat: R.notApplicable(),
   audio: R.notApplicable(),
-  tnc: R.check(R.OK, "/dev/ttyACM0", "no program is using it", "USB CDC")
+  tnc: R.check(R.OK, "/dev/ttyACM0", "port free", "USB CDC")
 })
 assert.equal(R.overall(tncOnly), R.OK)
 assert.equal(R.pathState(tncOnly, "tnc"), R.OK)
@@ -153,7 +153,7 @@ assert.equal(R.rows(tncOnly).map(function(row) { return row.key }).join("|"), "t
 
 // Both: all four applicable, worst-of-declared.
 const bothReady = stationWith({
-  tnc: R.check(R.OK, "/dev/ttyACM0", "no program is using it", "USB CDC")
+  tnc: R.check(R.OK, "/dev/ttyACM0", "port free", "USB CDC")
 })
 assert.equal(R.overall(bothReady), R.OK)
 assert.equal(R.counts(bothReady).ready, 4)
@@ -166,7 +166,7 @@ assert.equal(
 // A station declaring both is not green when only one path works: declaring a
 // path is a promise, and losing it is news even while the other still works.
 const bothDegraded = stationWith({
-  tnc: R.check(R.WARN, "/dev/ttyS0", "onboard serial port — cannot tell whether a modem is attached", "onboard serial")
+  tnc: R.check(R.WARN, "/dev/ttyS0", "onboard port", "onboard serial")
 })
 assert.equal(R.overall(bothDegraded), R.WARN)
 assert.equal(
@@ -175,7 +175,7 @@ assert.equal(
 )
 
 const tncFault = stationWith({
-  tnc: R.check(R.FAIL, "/dev/ttyACM0", "serial device /dev/ttyACM0 not present", "USB CDC")
+  tnc: R.check(R.FAIL, "/dev/ttyACM0", "device missing", "USB CDC")
 })
 assert.equal(R.overall(tncFault), R.FAIL)
 assert.equal(
@@ -192,11 +192,11 @@ assert.equal(
   R.verdictDetail(R.WARN, R.counts(stationWith({
     cat: R.notApplicable(),
     audio: R.notApplicable(),
-    tnc: R.check(R.WARN, "/dev/ttyS0", "onboard serial port — cannot tell whether a modem is attached", "onboard serial")
+    tnc: R.check(R.WARN, "/dev/ttyS0", "onboard port", "onboard serial")
   })), stationWith({
     cat: R.notApplicable(),
     audio: R.notApplicable(),
-    tnc: R.check(R.WARN, "/dev/ttyS0", "onboard serial port — cannot tell whether a modem is attached", "onboard serial")
+    tnc: R.check(R.WARN, "/dev/ttyS0", "onboard port", "onboard serial")
   }), "TNC"),
   "TNC: 1 of 2 checks needs attention"
 )
@@ -289,16 +289,16 @@ assert.equal(stopped.readout, "—")
 const noRx = R.audioCheck(audioInput({ tx: TX }))
 assert.equal(noRx.state, R.UNKNOWN)
 assert.equal(noRx.readout, "—")
-assert.equal(noRx.detail, "Radio RX not assigned")
+assert.equal(noRx.detail, "RX unassigned")
 
 const noTx = R.audioCheck(audioInput({ rx: RX }))
 assert.equal(noTx.state, R.UNKNOWN)
 assert.equal(noTx.readout, "USB codec")
-assert.equal(noTx.detail, "Radio TX not assigned")
+assert.equal(noTx.detail, "TX unassigned")
 
 const unassigned = R.audioCheck(audioInput())
 assert.equal(unassigned.state, R.UNKNOWN)
-assert.equal(unassigned.detail, "Radio RX and TX not assigned")
+assert.equal(unassigned.detail, "RX/TX unassigned")
 
 // A radio-class codec exists for both roles but nothing binds without the
 // operator: the detail invites the assignment and the state stays unknown.
@@ -307,7 +307,7 @@ const invite = R.audioCheck(audioInput({
   tx: { radioCandidate: true }
 }))
 assert.equal(invite.state, R.UNKNOWN)
-assert.equal(invite.detail, "USB audio codec detected — assign it")
+assert.equal(invite.detail, "codec detected")
 
 // Rung 3: a stale assignment. The operator chose a node that is gone; the
 // readout still names it, so the failure says which one disappeared. Nothing
@@ -315,34 +315,34 @@ assert.equal(invite.detail, "USB audio codec detected — assign it")
 const staleRx = R.audioCheck(audioInput({ rx: Object.assign({}, RX, { present: false }), tx: TX }))
 assert.equal(staleRx.state, R.FAIL)
 assert.equal(staleRx.readout, RX.assigned)
-assert.equal(staleRx.detail, 'Radio RX "' + RX.assigned + '" is not present')
+assert.equal(staleRx.detail, "RX not present")
 
 // Rung 4: Radio TX vanished while Radio RX is fine.
 const staleTx = R.audioCheck(audioInput({ rx: RX, tx: Object.assign({}, TX, { present: false }) }))
 assert.equal(staleTx.state, R.FAIL)
 assert.equal(staleTx.readout, "USB codec")
-assert.equal(staleTx.detail, 'Radio TX "' + TX.assigned + '" is not present')
+assert.equal(staleTx.detail, "TX not present")
 
 // Rung 5: RX muted is a warning — one toggle from ready, not a fault.
 const mutedRx = R.audioCheck(audioInput({ rx: Object.assign({}, RX, { muted: true }), tx: TX }))
 assert.equal(mutedRx.state, R.WARN)
-assert.equal(mutedRx.detail, "Radio RX is muted — nothing will decode")
+assert.equal(mutedRx.detail, "RX muted")
 
 // Rung 6: TX muted.
 const mutedTx = R.audioCheck(audioInput({ rx: RX, tx: Object.assign({}, TX, { muted: true }) }))
 assert.equal(mutedTx.state, R.WARN)
-assert.equal(mutedTx.detail, "Radio TX is muted — nothing will transmit")
+assert.equal(mutedTx.detail, "TX muted")
 
 // Rung 7: Radio TX is the system default output.
 const onAir = R.audioCheck(audioInput({ rx: RX, tx: Object.assign({}, TX, { isDefault: true }) }))
 assert.equal(onAir.state, R.WARN)
-assert.equal(onAir.detail, "Radio TX is the default output — other sounds go on air")
+assert.equal(onAir.detail, "TX default output")
 
 // Rung 8: both nodes present, unmuted, and Radio TX is not the default.
 const ready = R.audioCheck(audioInput({ rx: RX, tx: TX }))
 assert.equal(ready.state, R.OK)
 assert.equal(ready.readout, "USB codec")
-assert.equal(ready.detail, "Radio RX and TX ready")
+assert.equal(ready.detail, "RX/TX ready")
 assert.equal(ready.meta, "TX: USB codec")
 
 // One node for both roles: no second name to carry, so no meta.
@@ -373,10 +373,10 @@ const several = R.audioCheck(audioInput({
   tx: Object.assign({}, TX, { muted: true, isDefault: true })
 }))
 assert.equal(several.state, R.FAIL)
-assert.equal(several.detail, 'Radio RX "' + RX.assigned + '" is not present')
+assert.equal(several.detail, "RX not present")
 assert.equal(
   several.meta,
-  "also: Radio TX is muted — nothing will transmit · Radio TX is the default output — other sounds go on air"
+  "also: TX muted · TX default output"
 )
 
 // Unassigned outranks mute: an unconfigured check stays unknown, and the
@@ -385,8 +385,8 @@ const unassignedWithMute = R.audioCheck(audioInput({
   tx: Object.assign({}, TX, { muted: true })
 }))
 assert.equal(unassignedWithMute.state, R.UNKNOWN)
-assert.equal(unassignedWithMute.detail, "Radio RX not assigned")
-assert.equal(unassignedWithMute.meta, "also: Radio TX is muted — nothing will transmit")
+assert.equal(unassignedWithMute.detail, "RX unassigned")
+assert.equal(unassignedWithMute.meta, "also: TX muted")
 
 // ---- Radio audio: candidate ranking ------------------------------------
 //
@@ -561,14 +561,14 @@ const noDaemon = R.timeCheck(timeInput({ daemon: "none", synced: false }))
 assert.equal(noDaemon.state, R.FAIL)
 assert.equal(noDaemon.readout, "None")
 assert.equal(noDaemon.detail, "no time source")
-assert.equal(noDaemon.meta, "clock free-running")
+assert.equal(noDaemon.meta, "free-running")
 
 // A daemon that is up but not steering the clock is a fault, not "unknown":
 // the station has no trustworthy UTC right now.
 const unsyncedNtp = R.timeCheck(timeInput({ synced: false }))
 assert.equal(unsyncedNtp.state, R.FAIL)
 assert.equal(unsyncedNtp.readout, "None")
-assert.equal(unsyncedNtp.detail, "clock not synchronised")
+assert.equal(unsyncedNtp.detail, "clock unsynced")
 assert.match(unsyncedNtp.meta, /chrony/)
 assert.match(unsyncedNtp.meta, /0\.arch\.pool\.ntp\.org/)
 
@@ -585,7 +585,7 @@ const ntpReady = R.timeCheck(timeInput())
 assert.equal(ntpReady.state, R.OK)
 assert.equal(ntpReady.readout, "NTP")
 assert.equal(ntpReady.detail, "GPS mode off")
-assert.equal(ntpReady.meta, "clock disciplined")
+assert.equal(ntpReady.meta, "disciplined")
 
 // GPS configured but lost: the check warns even though NTP still carries the
 // clock, because the station's intended source is gone.
@@ -595,7 +595,7 @@ const gpsdDown = R.timeCheck(timeInput({
 }))
 assert.equal(gpsdDown.state, R.WARN)
 assert.equal(gpsdDown.readout, "NTP")
-assert.equal(gpsdDown.detail, "gpsd not running")
+assert.equal(gpsdDown.detail, "gpsd down")
 assert.equal(gpsdDown.meta, "GPS lost")
 
 // A missing gpspipe is not the same as a stopped daemon: the package is not
@@ -605,7 +605,7 @@ const gpsdMissing = R.timeCheck(timeInput({
   gps: { gpsd: false, installed: false }
 }))
 assert.equal(gpsdMissing.state, R.WARN)
-assert.equal(gpsdMissing.detail, "gpsd is not installed")
+assert.equal(gpsdMissing.detail, "gpsd missing")
 assert.equal(gpsdMissing.meta, "GPS lost")
 
 // A configured device that is not there is more specific than a daemon that
@@ -649,7 +649,7 @@ const noPps = R.timeCheck(timeInput({
 assert.equal(noPps.state, R.OK)
 assert.equal(noPps.readout, "NTP")
 assert.equal(noPps.detail, "3D fix · no PPS")
-assert.equal(noPps.meta, "clock disciplined")
+assert.equal(noPps.meta, "disciplined")
 
 const noPpsRequired = R.timeCheck(timeInput({
   gpsMode: "required",
@@ -676,8 +676,8 @@ const readyNotSelected = R.timeCheck(timeInput({
 }))
 assert.equal(readyNotSelected.state, R.OK)
 assert.equal(readyNotSelected.readout, "NTP")
-assert.equal(readyNotSelected.detail, "GPS ready · not selected")
-assert.equal(readyNotSelected.meta, "clock disciplined")
+assert.equal(readyNotSelected.detail, "GPS not selected")
+assert.equal(readyNotSelected.meta, "disciplined")
 
 const readyNotSelectedRequired = R.timeCheck(timeInput({
   gpsMode: "required",
@@ -694,7 +694,7 @@ const disciplining = R.timeCheck(timeInput({
 assert.equal(disciplining.state, R.OK)
 assert.equal(disciplining.readout, "GPS")
 assert.equal(disciplining.detail, "3D fix · PPS")
-assert.equal(disciplining.meta, "clock disciplined")
+assert.equal(disciplining.meta, "disciplined")
 
 // A clock that is not disciplined outranks every GPS rung: no source health
 // can be claimed while chrony is not steering the clock.
@@ -704,7 +704,7 @@ const unsyncedWithGps = R.timeCheck(timeInput({
   gps: { gpsd: true, devices: 1, mode: 3, pps: true, selected: true }
 }))
 assert.equal(unsyncedWithGps.state, R.FAIL)
-assert.equal(unsyncedWithGps.detail, "clock not synchronised")
+assert.equal(unsyncedWithGps.detail, "clock unsynced")
 
 // The setting arrives from shell.json as whatever the manifest offers, so the
 // ladder has to accept the displayed casing too.
@@ -918,19 +918,19 @@ function catInput(overrides) {
 const noRigctld = R.catCheck(catInput({ rigctld: false }))
 assert.equal(noRigctld.state, R.FAIL)
 assert.equal(noRigctld.readout, "—")
-assert.equal(noRigctld.detail, "rigctld not running")
+assert.equal(noRigctld.detail, "rigctld down")
 assert.equal(noRigctld.meta, "127.0.0.1:4532")
 
 // A missing hamlib package is not a stopped daemon: rigctld cannot run because
 // it was never installed, and the package is what the operator has to add.
 const noHamlib = R.catCheck(catInput({ installed: false, rigctld: false }))
 assert.equal(noHamlib.state, R.FAIL)
-assert.equal(noHamlib.detail, "hamlib is not installed")
+assert.equal(noHamlib.detail, "no hamlib")
 assert.equal(noHamlib.meta, "install hamlib")
 
 // Installed and stopped keeps the daemon rung.
 const stoppedDaemon = R.catCheck(catInput({ installed: true, rigctld: false }))
-assert.equal(stoppedDaemon.detail, "rigctld not running")
+assert.equal(stoppedDaemon.detail, "rigctld down")
 
 // A rig that answers is ready, whatever the device facts look like: rigctld
 // may run as another user, so its own open handle outranks our permissions.
@@ -955,7 +955,7 @@ assert.equal(modeMissing.detail, "MHz")
 // unknown, not a fault: nothing is known to be broken.
 const noClient = R.catCheck(catInput({ queryable: false, reply: { freq: 0 } }))
 assert.equal(noClient.state, R.UNKNOWN)
-assert.match(noClient.detail, /rigctl is not installed/)
+assert.match(noClient.detail, /no rigctl/)
 
 // A failed link is explained by the device, most specific rung first.
 const deviceMissing = R.catCheck(catInput({
@@ -963,14 +963,14 @@ const deviceMissing = R.catCheck(catInput({
   device: { present: false }
 }))
 assert.equal(deviceMissing.state, R.FAIL)
-assert.equal(deviceMissing.detail, "serial device /dev/ttyUSB0 not present")
+assert.equal(deviceMissing.detail, "missing /dev/ttyUSB0")
 
 const deviceDenied = R.catCheck(catInput({
   reply: { freq: 0 },
   device: { present: true, access: false, held: false }
 }))
 assert.equal(deviceDenied.state, R.FAIL)
-assert.equal(deviceDenied.detail, "permission denied on /dev/ttyUSB0")
+assert.equal(deviceDenied.detail, "permission denied")
 assert.match(deviceDenied.meta, /dialout/)
 
 const deviceBusy = R.catCheck(catInput({
@@ -978,7 +978,7 @@ const deviceBusy = R.catCheck(catInput({
   device: { present: true, access: true, held: false, busy: true }
 }))
 assert.equal(deviceBusy.state, R.FAIL)
-assert.equal(deviceBusy.detail, "serial port /dev/ttyUSB0 is in use")
+assert.equal(deviceBusy.detail, "in use: /dev/ttyUSB0")
 assert.match(deviceBusy.meta, /another program/)
 
 // rigctld holds the device itself, so a failed reply is the rig's silence,
@@ -988,14 +988,14 @@ const noReply = R.catCheck(catInput({
   device: { present: true, access: false, held: true, busy: true }
 }))
 assert.equal(noReply.state, R.FAIL)
-assert.equal(noReply.detail, "rig is not responding")
+assert.equal(noReply.detail, "no rig reply")
 assert.equal(noReply.meta, "Communication timed out")
 
 // A rig that is reached but reports no frequency has not answered the
 // question the check asks.
 const noFrequency = R.catCheck(catInput({ reply: { freq: 0, mode: "USB" } }))
 assert.equal(noFrequency.state, R.FAIL)
-assert.equal(noFrequency.detail, "rig is not responding")
+assert.equal(noFrequency.detail, "no rig reply")
 
 // rigctld started without -r (a network or config-file rig): no device rung
 // can be claimed, so the silence is all we have.
@@ -1004,7 +1004,7 @@ const noDeviceKnown = R.catCheck(catInput({
   device: { known: false }
 }))
 assert.equal(noDeviceKnown.state, R.FAIL)
-assert.equal(noDeviceKnown.detail, "rig is not responding")
+assert.equal(noDeviceKnown.detail, "no rig reply")
 
 // ---- CAT control: reading rigctld and rigctl ---------------------------
 //
@@ -1103,7 +1103,7 @@ assert.equal(R.timeCheck(R.timeFacts()).state, R.FAIL)
 assert.equal(R.timeCheck(R.timeFacts()).detail, "no time source")
 assert.equal(R.timeFacts().gps.pps, false)
 assert.equal(R.catCheck(R.catFacts()).state, R.FAIL)
-assert.equal(R.catCheck(R.catFacts()).detail, "rigctld not running")
+assert.equal(R.catCheck(R.catFacts()).detail, "rigctld down")
 assert.equal(R.catFacts().installed, true)
 assert.equal(R.catFacts().reply.freq, 0)
 
@@ -1112,7 +1112,7 @@ assert.equal(R.catFacts().reply.freq, 0)
 const station = {
   time: R.timeCheck(timeInput({ gpsMode: "optional", gps: { gpsd: true, devices: 1, mode: 0 } })),
   cat: R.check(R.OK, "14.074", "MHz · USB", "rigctld · PTT receive"),
-  audio: R.check(R.OK, "USB codec", "Radio RX and TX ready", "TX: USB codec"),
+  audio: R.check(R.OK, "USB codec", "RX/TX ready", "TX: USB codec"),
   tnc: R.notApplicable()
 }
 assert.equal(R.overall(station), R.WARN)
@@ -1155,14 +1155,14 @@ assert.equal(R.tncTransportKind(""), "")
 const unassignedTnc = R.tncCheck(tncInput())
 assert.equal(unassignedTnc.state, R.UNKNOWN)
 assert.equal(unassignedTnc.readout, "—")
-assert.equal(unassignedTnc.detail, "No TNC transport assigned")
-assert.equal(unassignedTnc.meta, "choose a transport")
+assert.equal(unassignedTnc.detail, "no transport")
+assert.equal(unassignedTnc.meta, "choose one")
 
 // Rung 2: an assigned serial path that is gone fails and names the path.
 const missingTnc = R.tncCheck(tncInput({ assigned: "/dev/ttyACM0" }))
 assert.equal(missingTnc.state, R.FAIL)
 assert.equal(missingTnc.readout, "/dev/ttyACM0")
-assert.equal(missingTnc.detail, "serial device /dev/ttyACM0 not present")
+assert.equal(missingTnc.detail, "device missing")
 assert.equal(missingTnc.meta, "USB CDC")
 
 // Rung 3: something exists there, but it is not a character device.
@@ -1171,7 +1171,7 @@ const notTty = R.tncCheck(tncInput({
   serial: { present: true, charDevice: false }
 }))
 assert.equal(notTty.state, R.FAIL)
-assert.equal(notTty.detail, "/dev/ttyACM0 is not a character device")
+assert.equal(notTty.detail, "not a tty")
 
 // Rung 4: permission denied names the group the operator has to join.
 const deniedTnc = R.tncCheck(tncInput({
@@ -1179,8 +1179,8 @@ const deniedTnc = R.tncCheck(tncInput({
   serial: { present: true, charDevice: true, readable: false }
 }))
 assert.equal(deniedTnc.state, R.FAIL)
-assert.equal(deniedTnc.detail, "permission denied on /dev/ttyACM0")
-assert.equal(deniedTnc.meta, "add your user to the dialout group")
+assert.equal(deniedTnc.detail, "permission denied")
+assert.equal(deniedTnc.meta, "add to dialout")
 
 // Rung 5: a port held by another process is ok — it is the state a working
 // TNC station is in while it is being used — and the holder is named. A held
@@ -1198,7 +1198,7 @@ const heldTnc = R.tncCheck(tncInput({
 }))
 assert.equal(heldTnc.state, R.OK)
 assert.equal(heldTnc.readout, "/dev/ttyACM0")
-assert.equal(heldTnc.detail, "in use by direwolf (pid 4711)")
+assert.equal(heldTnc.detail, "in use: direwolf")
 assert.equal(heldTnc.meta, "pid 4711")
 
 // Holdership outranks our own permission: a port the operator cannot read may
@@ -1215,7 +1215,7 @@ const heldWithoutAccess = R.tncCheck(tncInput({
   }
 }))
 assert.equal(heldWithoutAccess.state, R.OK)
-assert.equal(heldWithoutAccess.detail, "in use by direwolf (pid 4711)")
+assert.equal(heldWithoutAccess.detail, "in use: direwolf")
 
 // A holder whose name cannot be read is still named by pid.
 const anonymousHolder = R.tncCheck(tncInput({
@@ -1223,7 +1223,7 @@ const anonymousHolder = R.tncCheck(tncInput({
   serial: { present: true, charDevice: true, readable: true, holderPid: 99, holderName: "" }
 }))
 assert.equal(anonymousHolder.state, R.OK)
-assert.equal(anonymousHolder.detail, "in use by pid 99")
+assert.equal(anonymousHolder.detail, "in use: pid 99")
 
 // Rung 6: a legacy onboard port exists and opens whether or not a modem is
 // attached, so presence there proves nothing and the check warns.
@@ -1233,8 +1233,8 @@ const onboardTnc = R.tncCheck(tncInput({
 }))
 assert.equal(onboardTnc.state, R.WARN)
 assert.equal(onboardTnc.readout, "/dev/ttyS0")
-assert.equal(onboardTnc.detail, "onboard serial port — cannot tell whether a modem is attached")
-assert.equal(onboardTnc.meta, "onboard serial")
+assert.equal(onboardTnc.detail, "onboard port")
+assert.equal(onboardTnc.meta, "modem unknown")
 
 // Rung 7: a free port that opens read-only and closes is ok. The meta names
 // the transport kind, never a modem model.
@@ -1243,7 +1243,7 @@ const freeTnc = R.tncCheck(tncInput({
   serial: { present: true, charDevice: true, readable: true, opens: true }
 }))
 assert.equal(freeTnc.state, R.OK)
-assert.equal(freeTnc.detail, "no program is using it")
+assert.equal(freeTnc.detail, "port free")
 assert.equal(freeTnc.meta, "USB CDC")
 
 // A readable free port that will not open is a fault, not a cautious green.
@@ -1252,7 +1252,7 @@ const unopenableTnc = R.tncCheck(tncInput({
   serial: { present: true, charDevice: true, readable: true, opens: false }
 }))
 assert.equal(unopenableTnc.state, R.FAIL)
-assert.equal(unopenableTnc.detail, "cannot open /dev/ttyUSB0 read-only")
+assert.equal(unopenableTnc.detail, "cannot open")
 assert.equal(unopenableTnc.meta, "USB serial")
 
 // Rung 8: Bluetooth is graded at paired and connected, never at GATT or SPP.
@@ -1264,7 +1264,7 @@ const missingBluetooth = R.tncCheck(tncInput({
 }))
 assert.equal(missingBluetooth.state, R.FAIL)
 assert.equal(missingBluetooth.readout, "AA:BB:CC:DD:EE:4F")
-assert.equal(missingBluetooth.detail, "Bluetooth device not found")
+assert.equal(missingBluetooth.detail, "BT not found")
 assert.equal(missingBluetooth.meta, "AA:BB:CC:DD:EE:4F")
 
 const unpairedTnc = R.tncCheck(tncInput({
@@ -1278,7 +1278,7 @@ const unpairedTnc = R.tncCheck(tncInput({
 }))
 assert.equal(unpairedTnc.state, R.FAIL)
 assert.equal(unpairedTnc.readout, "Mobilinkd TNC4")
-assert.equal(unpairedTnc.detail, "Bluetooth device is not paired")
+assert.equal(unpairedTnc.detail, "not paired")
 assert.equal(unpairedTnc.meta, "AA:BB:CC:DD:EE:4F")
 
 const unconnectedTnc = R.tncCheck(tncInput({
@@ -1291,7 +1291,7 @@ const unconnectedTnc = R.tncCheck(tncInput({
   }
 }))
 assert.equal(unconnectedTnc.state, R.FAIL)
-assert.equal(unconnectedTnc.detail, "Bluetooth device is not connected")
+assert.equal(unconnectedTnc.detail, "not connected")
 
 const connectedTnc = R.tncCheck(tncInput({
   assigned: "AA:BB:CC:DD:EE:4F",
@@ -1304,7 +1304,7 @@ const connectedTnc = R.tncCheck(tncInput({
 }))
 assert.equal(connectedTnc.state, R.OK)
 assert.equal(connectedTnc.readout, "Mobilinkd TNC4")
-assert.equal(connectedTnc.detail, "connected over Bluetooth")
+assert.equal(connectedTnc.detail, "connected")
 assert.equal(connectedTnc.meta, "AA:BB:CC:DD:EE:4F")
 
 const unnamedBluetooth = R.tncCheck(tncInput({
@@ -1317,7 +1317,7 @@ assert.equal(unnamedBluetooth.readout, "AA:BB:CC:DD:EE:4F")
 const gibberish = R.tncCheck(tncInput({ assigned: "ttyACM0" }))
 assert.equal(gibberish.state, R.FAIL)
 assert.equal(gibberish.readout, "ttyACM0")
-assert.equal(gibberish.detail, "not a device path or Bluetooth address")
+assert.equal(gibberish.detail, "bad transport")
 
 // The serial report parser turns the probe's key=value lines into the shape
 // the ladder reads, and leaves neutral facts when it got nothing.
