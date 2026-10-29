@@ -22,8 +22,8 @@ import "Readiness.js" as Readiness
 // marker.
 Panel {
   id: root
-  moduleName: "myockey.station"
-  ipcTarget: "myockey.station"
+  moduleName: "yock.station-readiness"
+  ipcTarget: "yock.station-readiness"
   manageIpc: false
 
   property var anchorItem: null

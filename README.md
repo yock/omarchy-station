@@ -1,4 +1,4 @@
-# Omarchy Station
+# Omarchy Station Readiness
 
 A station-readiness widget for [Omarchy](https://omarchy.org/) 4.x. One drawn
 station glyph — a mast with a tip ball and signal arcs — and a small
@@ -61,7 +61,7 @@ lives on the `prototype/station-panel` branch.
 
 ```
 omarchy-station/
-├── manifest.json          # plugin id: myockey.station, kind: bar-widget
+├── manifest.json          # plugin id: yock.station-readiness, kind: bar-widget
 ├── BarWidget.qml          # station glyph, readiness dot, poll timer, IPC
 ├── ProbedCheck.qml        # shared poll state machine for the time and CAT checks
 ├── TimeProbe.qml          # chrony/timesyncd source health and gpsd facts
@@ -91,9 +91,9 @@ which stays the source of truth for type, accepted values and default.
 
 | Key | Type | Accepted values | Default | What it changes |
 |---|---|---|---|---|
-| `refreshIntervalSec` | integer | 1–60 | `5` | How often the time, CAT and TNC checks are re-probed, in seconds; radio audio and Bluetooth state update live. CLI-only: `omarchy bar set myockey.station refreshIntervalSec 10`. |
+| `refreshIntervalSec` | integer | 1–60 | `5` | How often the time, CAT and TNC checks are re-probed, in seconds; radio audio and Bluetooth state update live. CLI-only: `omarchy bar set yock.station-readiness refreshIntervalSec 10`. |
 | `gpsMode` | enum | `Off`, `Optional`, `Required` | `Off` | Whether GPS timing is expected, and how hard its loss bites. Editable from the panel: click Time sync or press `g`. The consequences are the [Time sync policy matrix](#time-sync), not restated here. |
-| `stationPaths` | enum | `Host audio`, `TNC`, `Both` | `Host audio` | Which station paths the station expects. `Host audio` grades CAT control and radio audio; `TNC` grades the modem transport and makes CAT and radio audio not applicable; `Both` requires every declared path to be ready. Editable from the panel: click Station paths or press `s`. CLI: `omarchy bar set myockey.station stationPaths Both`. |
+| `stationPaths` | enum | `Host audio`, `TNC`, `Both` | `Host audio` | Which station paths the station expects. `Host audio` grades CAT control and radio audio; `TNC` grades the modem transport and makes CAT and radio audio not applicable; `Both` requires every declared path to be ready. Editable from the panel: click Station paths or press `s`. CLI: `omarchy bar set yock.station-readiness stationPaths Both`. |
 | `radioRxNode` | string | any PipeWire source `node.name`, or `(empty)` | `(empty)` | The source a digital-mode app captures the rig's audio from. Editable in the audio picker: click Radio audio or press `a`. |
 | `radioTxNode` | string | any PipeWire sink `node.name`, or `(empty)` | `(empty)` | The sink a digital-mode app plays tones into. Editable in the audio picker: click Radio audio or press `a`. |
 | `tncTransport` | string | an absolute serial device path, a Bluetooth address, or `(empty)` | `(empty)` | The modem's transport. Classified by shape and graded on holdership. Editable in the TNC picker: click TNC transport or press `t`. |
@@ -125,7 +125,7 @@ see ADR 0001.
 | `Required` | amber | amber |
 
 ```bash
-omarchy bar set myockey.station gpsMode Optional
+omarchy bar set yock.station-readiness gpsMode Optional
 ```
 
 ## GPS time sync setup
@@ -190,7 +190,7 @@ Verify with `gpsmon` (3D fix and `PPS` lines), `ppstest /dev/pps0`, then
 tracking`. Then tell the widget what to expect:
 
 ```bash
-omarchy bar set myockey.station gpsMode Optional   # or Required
+omarchy bar set yock.station-readiness gpsMode Optional   # or Required
 ```
 
 **What udev already does.** The `gpsd` package ships
@@ -239,10 +239,10 @@ choose `TNC` or `Both`; the TNC transport picker then appears as the last cell.
 The same declaration can be set from the CLI:
 
 ```bash
-omarchy bar set myockey.station stationPaths TNC
-omarchy bar set myockey.station tncTransport /dev/ttyACM0
+omarchy bar set yock.station-readiness stationPaths TNC
+omarchy bar set yock.station-readiness tncTransport /dev/ttyACM0
 # or a Bluetooth address
-omarchy bar set myockey.station tncTransport AA:BB:CC:DD:EE:4F
+omarchy bar set yock.station-readiness tncTransport AA:BB:CC:DD:EE:4F
 ```
 
 The check grades the transport and stops there. The probe resolves the path
@@ -280,8 +280,8 @@ nothing binds without an explicit choice.
 A station can also be pre-configured from the CLI:
 
 ```bash
-omarchy bar set myockey.station radioRxNode alsa_input.usb-codec-00.mono-fallback
-omarchy bar set myockey.station radioTxNode alsa_output.usb-codec-00.analog-stereo
+omarchy bar set yock.station-readiness radioRxNode alsa_input.usb-codec-00.mono-fallback
+omarchy bar set yock.station-readiness radioTxNode alsa_output.usb-codec-00.analog-stereo
 ```
 
 The picker persists through `bar.shell.updateEntryInline`, rebuilding the whole
@@ -315,7 +315,7 @@ Install it the same way any third-party plugin is installed:
 
 ```bash
 omarchy plugin add https://github.com/<you>/omarchy-station.git --enable
-omarchy bar move myockey.station right
+omarchy bar move yock.station-readiness right
 ```
 
 For local iteration before the repository exists, copy the directory into the
@@ -323,14 +323,14 @@ plugin directory and enable it explicitly:
 
 ```bash
 mkdir -p ~/.config/omarchy/plugins
-cp -r ~/Work/omarchy-station ~/.config/omarchy/plugins/myockey.station
-omarchy plugin enable myockey.station --section right
+cp -r ~/Work/omarchy-station ~/.config/omarchy/plugins/yock.station-readiness
+omarchy plugin enable yock.station-readiness --section right
 omarchy-shell shell rescanPlugins
 ```
 
 A rescan can land mid-write and leave the widget unmounted; `omarchy restart
 shell` is the reliable way to pick up a new probe file. Remove it with
-`omarchy plugin remove myockey.station --yes` when you are done.
+`omarchy plugin remove yock.station-readiness --yes` when you are done.
 
 ## Next
 

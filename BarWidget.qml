@@ -12,7 +12,7 @@ import "Readiness.js" as Readiness
 // means the bar, tooltip and panel cannot disagree mid-update.
 BarWidget {
   id: root
-  moduleName: "myockey.station"
+  moduleName: "yock.station-readiness"
 
   // Time, CAT and the TNC transport are polled on one interval; radio audio
   // and Bluetooth state are event-driven, so the timer says the same thing to
@@ -226,7 +226,7 @@ BarWidget {
   }
 
   IpcHandler {
-    target: "myockey.station"
+    target: "yock.station-readiness"
 
     function open(): void { root.open() }
     function close(): void { root.close() }

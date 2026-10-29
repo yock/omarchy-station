@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "id": "myockey.station",
-  "name": "Station",
+  "id": "yock.station-readiness",
+  "name": "Station Readiness",
   "version": "0.1.0",
-  "author": "myockey",
+  "author": "yock",
   "license": "MIT",
   "description": "Station readiness for digital-mode operators: time sync, CAT control, radio audio and TNC transport at a glance, with a green/amber/red bar indicator.",
   "keywords": [
@@ -27,7 +27,7 @@
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "Station",
+    "displayName": "Station Readiness",
     "description": "Green/amber/red station readiness: time sync, CAT, radio audio and TNC transport.",
     "category": "System",
     "aliases": [
