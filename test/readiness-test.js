@@ -587,6 +587,38 @@ assert.equal(ntpReady.readout, "NTP")
 assert.equal(ntpReady.detail, "GPS mode off")
 assert.equal(ntpReady.meta, "disciplined")
 
+// GPS timing needs chrony: gpsd can expose a refclock socket, but only chrony
+// consumes one. With GPS configured, the missing package outranks every gpsd
+// source rung, even when gpsd already has a fix and PPS.
+const chronyMissing = R.timeCheck(timeInput({
+  gpsMode: "optional",
+  daemon: "timesyncd",
+  chronyInstalled: false,
+  gps: { gpsd: true, devices: 1, mode: 3, satellites: 9, pps: true, selected: false }
+}))
+assert.equal(chronyMissing.state, R.WARN)
+assert.equal(chronyMissing.readout, "NTP")
+assert.equal(chronyMissing.detail, "chrony missing")
+assert.equal(chronyMissing.meta, "install chrony")
+
+const chronyMissingRequired = R.timeCheck(timeInput({
+  gpsMode: "required",
+  daemon: "timesyncd",
+  chronyInstalled: false,
+  gps: { gpsd: false }
+}))
+assert.equal(chronyMissingRequired.state, R.WARN)
+assert.equal(chronyMissingRequired.detail, "chrony missing")
+
+// With GPS off, timesyncd is a complete NTP source and chrony is not required:
+// its absence is not a finding.
+const chronyMissingOff = R.timeCheck(timeInput({
+  daemon: "timesyncd",
+  chronyInstalled: false
+}))
+assert.equal(chronyMissingOff.state, R.OK)
+assert.equal(chronyMissingOff.detail, "GPS mode off")
+
 // GPS configured but lost: the check warns even though NTP still carries the
 // clock, because the station's intended source is gone.
 const gpsdDown = R.timeCheck(timeInput({
@@ -1102,6 +1134,7 @@ assert.equal(R.formatFrequency("nonsense"), "—")
 assert.equal(R.timeCheck(R.timeFacts()).state, R.FAIL)
 assert.equal(R.timeCheck(R.timeFacts()).detail, "no time source")
 assert.equal(R.timeFacts().gps.pps, false)
+assert.equal(R.timeFacts().chronyInstalled, true)
 assert.equal(R.catCheck(R.catFacts()).state, R.FAIL)
 assert.equal(R.catCheck(R.catFacts()).detail, "rigctld down")
 assert.equal(R.catFacts().installed, true)

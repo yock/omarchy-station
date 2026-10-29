@@ -242,14 +242,16 @@ function capitalizeFirst(value) {
 //
 // `input` is:
 //
-//   gpsMode     "off" | "optional" | "required"
-//   daemon      "chrony" | "timesyncd" | "none"
-//   synced      the clock is being disciplined right now
-//   server      the reference carrying the clock, "" when there is none
-//   gps         { gpsd, installed, missing, devices, mode, satellites, pps,
-//                 selected }
+//   gpsMode          "off" | "optional" | "required"
+//   daemon           "chrony" | "timesyncd" | "none"
+//   synced           the clock is being disciplined right now
+//   server           the reference carrying the clock, "" when there is none
+//   chronyInstalled  the chrony package is present, so a GPS refclock can be
+//                    consumed at all
+//   gps              { gpsd, installed, missing, devices, mode, satellites,
+//                      pps, selected }
 //
-// Rungs, most specific first: no device, gpsd down, no fix, fix
+// Rungs, most specific first: chrony missing, no device, gpsd down, no fix, fix
 // without PPS, ready but not selected, disciplining. A fix never forces the
 // clock onto GPS — the daemon's selected reference decides the readout — and
 // a healthy NTP fallback is still a ready clock.
@@ -322,6 +324,7 @@ function timeFacts() {
     daemon: "none",
     synced: false,
     server: "",
+    chronyInstalled: true,
     gps: {
       gpsd: false,
       installed: true,
@@ -382,6 +385,13 @@ function timeCheck(input) {
   var readout = gps.selected === true ? "GPS" : "NTP"
   var lostMeta = TIME_GPS_LOST + satelliteMeta(gps)
   var policy = required ? WARN : OK
+
+  // gpsd can expose a refclock socket, but only chrony consumes one. With GPS
+  // configured, the missing package outranks every GPS source rung: no fix can
+  // discipline the clock until it is installed. With GPS off, timesyncd is a
+  // complete NTP source and this rung is never reached.
+  if (facts.chronyInstalled === false)
+    return check(WARN, readout, "chrony missing", "install chrony")
 
   // A missing package outranks every other source rung: nothing else can be
   // reached until it is installed. Then a configured device that is gone is

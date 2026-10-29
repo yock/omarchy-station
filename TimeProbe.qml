@@ -8,7 +8,9 @@ import "Readiness.js" as Readiness
 // Chrony answers first because a GPS/PPS refclock lives there; stock Omarchy's
 // systemd-timesyncd is the fallback. When GPS is configured, gpsd supplies the
 // receiver, fix and satellite facts, and chrony's source list says whether a
-// PPS refclock exists and whether it is the selected reference.
+// PPS refclock exists and whether it is the selected reference. A missing
+// chrony package is a fact of its own, because without it a GPS refclock
+// cannot discipline the clock.
 //
 // Every fact lands in `pending` and is committed in one assignment, so the bar
 // never paints an answer assembled from two different polls.
@@ -24,9 +26,12 @@ ProbedCheck {
   readonly property var check: root.probed
     ? Readiness.timeCheck({
         gpsMode: root.gpsSetting,
+        // Every top-level fact timeCheck reads must be forwarded here; a fact
+        // left out reads as absent and its rung silently disappears.
         daemon: root.facts.daemon,
         synced: root.facts.synced,
         server: root.facts.server,
+        chronyInstalled: root.facts.chronyInstalled,
         gps: root.facts.gps
       })
     : Readiness.notProbed()
@@ -98,6 +103,10 @@ ProbedCheck {
     }
     stderr: StdioCollector { id: chronyErr; waitForEnd: true }
     onExited: function(exitCode) {
+      // 127 is the shell saying chronyc is not installed: the package is
+      // missing, not the daemon. Recorded because GPS timing cannot be
+      // consumed without it; the ladder only reports it when GPS is configured.
+      if (exitCode === 127) root.pending.chronyInstalled = false
       if (exitCode !== 0) {
         timesyncProc.running = true
         return

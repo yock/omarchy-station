@@ -108,14 +108,17 @@ mode and the satellite count, and `chronyc -n sources` says whether a PPS
 refclock exists and whether it is the selected reference.
 
 The readout is the source that is actually disciplining the clock. The detail is
-the most specific rung: gpsd missing, no GPS device, gpsd down, no fix, fix
-without PPS, GPS not selected, or the fix that is steering it.
+the most specific rung: chrony missing, gpsd missing, no GPS device, gpsd down,
+no fix, fix without PPS, GPS not selected, or the fix that is steering it.
+`chrony missing` only appears when GPS is configured: `gpsd` can expose a
+refclock socket, but only `chrony` consumes one. With GPS off, `systemd-timesyncd`
+is a complete NTP source and chrony is not required.
 A fix never forces the clock onto GPS, and an offset threshold is never applied —
 see ADR 0001.
 
 `gpsMode` says what the station expects:
 
-| Value | No device, gpsd down, no fix | Fix without PPS, or ready but not selected |
+| Value | chrony or gpsd missing, no device, gpsd down, no fix | Fix without PPS, or ready but not selected |
 |---|---|---|
 | `Off` (default) | `GPS mode off` | — |
 | `Optional` | amber | green |
