@@ -357,6 +357,23 @@ shell` is the reliable way to pick up a new probe file.
 omarchy plugin remove yock.station-readiness --yes
 ```
 
+## Build a release
+
+```bash
+scripts/build-release.sh            # writes dist/station-readiness-<version>.tar.gz
+```
+
+It packs an explicit runtime allowlist — `manifest.json` first, then
+`Readiness.js`, `README.md`, `LICENSE`, every root-level `*.qml`, and one
+`preview.*` if present — then verifies what it made: `manifest.json` at the
+archive root, nothing outside the allowlist, under the registry's 10 MB and
+2,000-entry limits, and a clean extraction that passes `omarchy plugin
+validate`.
+
+Dev scaffolding (`.agents/`, `AGENTS.md`, `skills-lock.json`, `docs/`, `test/`,
+`scripts/`) never enters the tarball. A new `*.qml` file is picked up
+automatically; any other runtime file has to be added to the list.
+
 ## Next
 
 1. **Bluetooth bridging** — BLE GATT and SPP bridging need an `rfcomm` binding
