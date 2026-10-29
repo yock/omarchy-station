@@ -10,13 +10,37 @@ The installation the widget assesses: a host, a transceiver, an audio chain and
 a time source, whether a portable backpack setup or a modest fixed one.
 _Avoid_: setup, shack.
 
+**Station path**:
+One complete way the host reaches the transceiver: Host-audio or TNC. A station
+declares every path it expects, so having both is two paths rather than a third
+kind of station. _Avoid_: mode, profile, station class.
+
+**Host-audio path**:
+The station path where the host carries the audio: CAT control plus a Radio RX
+and Radio TX role. _Avoid_: soundcard mode, audio setup.
+
+**TNC path**:
+The station path where a modem carries the audio and keys the rig itself, so no
+host audio role and no CAT link exist. _Avoid_: hardware TNC, KISS mode.
+
+**TNC transport**:
+The link from the host to a modem: a USB serial device or a Bluetooth device.
+_Avoid_: TNC port, modem device.
+
 **Readiness**:
 Whether the station can work a digital mode right now, expressed as the worst of
-the three checks. _Avoid_: health, status, green.
+the checks its declared station paths make applicable. _Avoid_: health, status,
+green.
 
 **Check**:
-One of the three independent readiness questions: time sync, CAT control, radio
-audio. _Avoid_: probe, indicator.
+One of the independent readiness questions: time sync, CAT control, radio audio,
+TNC transport. A check serves a station path or, like time sync, the station as a
+whole. _Avoid_: probe, indicator.
+
+**Not applicable**:
+A check that no declared station path needs. It is neither a pass nor a failure,
+aggregation skips it, and the panel never renders it. _Avoid_: disabled,
+ignored, ok.
 
 **Probe**:
 The observation that supplies a check with its state. A check is the product
@@ -58,9 +82,9 @@ The residual error between the host clock and a time source it already trusts.
 It is a diagnostic, never a readiness signal. _Avoid_: drift, variance, skew.
 
 **CAT link**:
-The path from the widget to the rig: `rigctld` reachable, serial device present
-and permitted, rig answering frequency — and mode where the backend reports it.
-_Avoid_: CAT status.
+The path from the widget to the rig: the `hamlib` package installed, `rigctld`
+reachable, serial device present and permitted, rig answering frequency — and
+mode where the backend reports it. _Avoid_: CAT status.
 
 **Meter reading**:
 A TX-only diagnostic such as SWR, ALC or forward power. Many rigs expose raw,
@@ -77,8 +101,9 @@ keying path exists. _Avoid_: PTT check.
 
 **Radio audio**:
 The station's sound path to and from the transceiver: a receive path the station
-decodes from and a transmit path it plays tones into. _Avoid_: sound, audio
-device, audio chain.
+decodes from and a transmit path it plays tones into. It belongs to the
+Host-audio path; a TNC path carries its audio inside the modem. _Avoid_: sound,
+audio device, audio chain.
 
 **Radio RX**:
 The receive role in radio audio: the source a digital-mode app captures the
