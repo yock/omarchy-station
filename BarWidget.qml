@@ -14,19 +14,34 @@ BarWidget {
   id: root
   moduleName: "myockey.station"
 
-  // Time and CAT are polled on one interval; radio audio is event-driven, so
-  // the timer says the same thing to both probes that need it.
+  // Time, CAT and the TNC transport are polled on one interval; radio audio
+  // and Bluetooth state are event-driven, so the timer says the same thing to
+  // the probes that need it.
   readonly property int pollIntervalSec: Math.max(1, Number(root.setting("refreshIntervalSec", 5)) || 5)
 
+  // The declaration is a setting, never an inference from attached hardware.
+  readonly property string stationPathsSetting: String(
+    root.setting(Readiness.stationPathSettingKey(), Readiness.STATION_PATH_DEFAULT))
+
+  // A check no declared path needs is na in the snapshot: present in the fixed
+  // shape, skipped by aggregation and absent from the panel.
   readonly property var readiness: {
     var snapshot = Readiness.emptySnapshot()
     snapshot.time = timeProbe.check
-    snapshot.cat = catProbe.check
-    snapshot.audio = audioProbe.check
+    snapshot.cat = Readiness.declares(root.stationPathsSetting, Readiness.PATH_HOST)
+      ? catProbe.check : Readiness.notApplicable()
+    snapshot.audio = Readiness.declares(root.stationPathsSetting, Readiness.PATH_HOST)
+      ? audioProbe.check : Readiness.notApplicable()
+    snapshot.tnc = Readiness.declares(root.stationPathsSetting, Readiness.PATH_TNC)
+      ? tncProbe.check : Readiness.notApplicable()
     return snapshot
   }
 
   readonly property var audioCandidates: audioProbe.candidates
+  readonly property var tncCandidates: tncProbe.candidates
+  // Evidence of an undeclared path is text, never a state.
+  readonly property string tncHint: Readiness.declares(root.stationPathsSetting, Readiness.PATH_TNC)
+    ? "" : tncProbe.hint
 
   readonly property string overallState: Readiness.overall(readiness)
   readonly property color overallColor: Readiness.color(overallState)
@@ -36,6 +51,8 @@ BarWidget {
   function assignSetting(key, value) {
     var modeChanged = key === Readiness.gpsModeSettingKey()
       && Readiness.gpsModeOf(value) !== Readiness.gpsModeOf(root.setting(key, "Off"))
+    var transportChanged = key === Readiness.tncSettingKey()
+      && !Readiness.sameTncTransport(value, root.setting(key, ""))
 
     var entry = { id: root.moduleName }
     for (var existing in root.settings) if (existing !== "id") entry[existing] = root.settings[existing]
@@ -53,6 +70,13 @@ BarWidget {
     if (modeChanged) {
       timeProbe.invalidate()
       timeProbe.refresh()
+    }
+
+    // The facts collected for one transport do not answer the next one: drop
+    // the old answer, then scan rather than wait out refreshIntervalSec.
+    if (transportChanged) {
+      tncProbe.invalidate()
+      tncProbe.refresh()
     }
   }
 
@@ -77,6 +101,11 @@ BarWidget {
     id: catProbe
   }
 
+  TncProbe {
+    id: tncProbe
+    transport: String(root.setting(Readiness.tncSettingKey(), ""))
+  }
+
   // The glyph is drawn (StationGlyph.qml), not set in an icon font. 18px is
   // the optical canvas it was tuned on: big enough for the arcs to separate
   // from the ball, still inside the bar's 21px status slot.
@@ -91,11 +120,14 @@ BarWidget {
     if ("hostWidget" in target) target.hostWidget = root
     if ("readiness" in target) target.readiness = root.readiness
     if ("audioCandidates" in target) target.audioCandidates = root.audioCandidates
+    if ("tncCandidates" in target) target.tncCandidates = root.tncCandidates
+    if ("tncHint" in target) target.tncHint = root.tncHint
   }
 
   function refresh() {
     timeProbe.refresh()
     catProbe.refresh()
+    tncProbe.refresh()
     if (panelLoader.item && panelLoader.item.refresh) panelLoader.item.refresh()
   }
 
@@ -138,8 +170,10 @@ BarWidget {
   onBarChanged: injectPanel()
   onSettingsChanged: injectPanel()
   onReadinessChanged: injectPanel()
-  // Node enumeration can change the picker's rows without changing the check.
+  // Device enumeration can change the picker's rows without changing the check.
   onAudioCandidatesChanged: injectPanel()
+  onTncCandidatesChanged: injectPanel()
+  onTncHintChanged: injectPanel()
 
   Loader {
     id: panelLoader
@@ -165,7 +199,7 @@ BarWidget {
         color: button.foreground
       }
     }
-    tooltipText: Readiness.tooltip(root.readiness)
+    tooltipText: Readiness.tooltip(root.readiness, root.stationPathsSetting, root.tncHint)
     onPressed: function(b) {
       if (b === Qt.MiddleButton) root.refresh()
       else root.togglePanel()

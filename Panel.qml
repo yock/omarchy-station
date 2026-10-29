@@ -7,13 +7,19 @@ import qs.Commons
 import qs.Ui
 import "Readiness.js" as Readiness
 
-// Expanded station readiness: one verdict line over a three-column readout.
+// Expanded station readiness: one verdict line over one flat readout row.
+//
+// The row is time sync, then the declared station paths' checks: two, three or
+// four columns, decided by the declaration alone and never by hardware state.
+// A not-applicable check never reaches this panel — the model's rows() drops
+// it — so no column is ever drawn greyed out.
 //
 // The readouts are not all numbers. Time leads with its source (GPS/NTP)
 // because a clock's variance is not a readiness signal; CAT leads with the
 // frequency; audio leads with the assigned Radio RX node, so a failure still
-// names the node that went missing. Each check's state is the coloured rule
-// under its column, so there is no second state marker.
+// names the node that went missing; TNC leads with the transport. Each check's
+// state is the coloured rule under its column, so there is no second state
+// marker.
 Panel {
   id: root
   moduleName: "myockey.station"
@@ -24,10 +30,12 @@ Panel {
   property var hostWidget: null
   property var readiness: Readiness.emptySnapshot()
   property var audioCandidates: ({ rx: [], tx: [] })
+  property var tncCandidates: []
+  property string tncHint: ""
 
-  // Which inline picker is open: "" | "audio" | "gps". At most one is open,
-  // neither opens by itself, and both open over a green check because they
-  // edit configuration rather than remediate a fault.
+  // Which inline picker is open: "" | "audio" | "gps" | "tnc". At most one is
+  // open, none opens by itself, and each opens over a green check because it
+  // edits configuration rather than remediates a fault.
   property string pickerKind: ""
   property int pickerIndex: 0
 
@@ -48,6 +56,9 @@ Panel {
   }
 
   readonly property string gpsModeSetting: String(root.setting(Readiness.gpsModeSettingKey(), "Off"))
+  readonly property string stationPathsSetting: String(
+    root.setting(Readiness.stationPathSettingKey(), Readiness.STATION_PATH_DEFAULT))
+  readonly property string tncSetting: String(root.setting(Readiness.tncSettingKey(), ""))
 
   // Every edit goes back through the bar widget, which owns the whole
   // shell.json entry: updateEntryInline replaces it, and the entry also holds
@@ -119,7 +130,14 @@ Panel {
     return root.slotPickerRows(list)
   }
 
+  // The TNC picker edits one setting, like gpsMode: choosing a transport
+  // applies it and collapses the picker, and Clear is only offered when
+  // something is assigned.
+  readonly property var tncPickerModel:
+    root.slotPickerRows(Readiness.tncTransportRows(root.tncCandidates, root.tncSetting))
+
   readonly property var pickerModel: root.pickerKind === "gps" ? root.gpsPickerModel
+    : root.pickerKind === "tnc" ? root.tncPickerModel
     : root.pickerKind === "audio" ? root.audioPickerModel : []
 
   readonly property var pickerRows: {
@@ -149,6 +167,27 @@ Panel {
     else root.openPicker("gps", Readiness.gpsModeCursor(root.gpsModeSetting))
   }
 
+  // The cursor opens on the assigned transport's row. There is no TNC column
+  // to edit on a station that does not declare the path, so `t` is inert
+  // there rather than writing a setting the panel cannot show.
+  function toggleTncPicker() {
+    if (!Readiness.declares(root.stationPathsSetting, Readiness.PATH_TNC)) return
+    if (root.pickerKind === "tnc") root.closePicker()
+    else root.openPicker("tnc",
+      Readiness.tncTransportCursor(root.tncCandidates, root.tncSetting))
+  }
+
+  // A column is clickable exactly when it edits a setting.
+  function editsSetting(key) {
+    return key === "time" || key === "audio" || key === "tnc"
+  }
+
+  function toggleColumnPicker(key) {
+    if (key === "time") root.toggleGpsPicker()
+    else if (key === "audio") root.toggleAudioPicker()
+    else if (key === "tnc") root.toggleTncPicker()
+  }
+
   function closePicker() {
     root.pickerKind = ""
     root.pickerIndex = 0
@@ -176,11 +215,16 @@ Panel {
       return
     }
     if (row.kind === "clear") {
-      root.assignAudio(row.role, "")
+      if (row.role === "tnc") root.applyTncTransport("")
+      else root.assignAudio(row.role, "")
       return
     }
     if (row.kind === "gps") {
       root.applyGpsMode(row.value)
+      return
+    }
+    if (row.kind === "tnc") {
+      root.applyTncTransport(row.value)
       return
     }
     root.assignAudio(row.role, row.name)
@@ -194,6 +238,15 @@ Panel {
     root.closePicker()
     if (sameMode) return
     root.assignSetting(Readiness.gpsModeSettingKey(), String(value))
+  }
+
+  // The bar widget owns the poll, so it invalidates the old transport's facts
+  // and re-scans when this setting changes.
+  function applyTncTransport(value) {
+    var sameTransport = Readiness.sameTncTransport(value, root.tncSetting)
+    root.closePicker()
+    if (sameTransport) return
+    root.assignSetting(Readiness.tncSettingKey(), String(value))
   }
 
   function activatePickerSlot(slot) {
@@ -255,6 +308,7 @@ Panel {
       onTextKey: function(t) {
         if (t === "a" || t === "A") root.toggleAudioPicker()
         else if (t === "g" || t === "G") root.toggleGpsPicker()
+        else if (t === "t" || t === "T") root.toggleTncPicker()
       }
       onCloseRequested: {
         // Escape collapses the picker before it closes the panel.
@@ -273,6 +327,7 @@ Panel {
           spacing: Style.space(8)
 
           Column {
+            Layout.fillWidth: true
             spacing: Style.space(1)
 
             Text {
@@ -285,11 +340,15 @@ Panel {
             }
 
             Text {
-              text: Readiness.verdictDetail(root.overallState, root.counts)
+              width: parent.width
+              text: Readiness.verdictDetail(
+                root.overallState, root.counts, root.readiness,
+                root.stationPathsSetting, root.tncHint)
               textFormat: Text.PlainText
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
             }
           }
 
@@ -383,12 +442,9 @@ Panel {
               // assignments. A handler rather than an Item so the layout does
               // not see a second child.
               TapHandler {
-                enabled: column.modelData.key === "audio" || column.modelData.key === "time"
+                enabled: root.editsSetting(column.modelData.key)
                 cursorShape: Qt.PointingHandCursor
-                onTapped: {
-                  if (column.modelData.key === "time") root.toggleGpsPicker()
-                  else if (column.modelData.key === "audio") root.toggleAudioPicker()
-                }
+                onTapped: root.toggleColumnPicker(column.modelData.key)
               }
             }
           }
@@ -519,7 +575,7 @@ Panel {
 
         Text {
           width: parent.width
-          text: "Click Time sync or press g to set GPS mode · Click Radio audio or press a to assign Radio RX and Radio TX · Middle-click the bar to re-probe · Bar dot: grey unknown · green ready · amber check · red fault"
+          text: "Click Time sync or press g to set GPS mode · Click Radio audio or press a to assign Radio RX and Radio TX · Click TNC transport or press t to assign a modem transport · Middle-click the bar to re-probe · Bar dot: grey unknown · green ready · amber check · red fault"
           textFormat: Text.PlainText
           color: Util.alpha(root.foreground, 0.44)
           font.family: root.fontFamily

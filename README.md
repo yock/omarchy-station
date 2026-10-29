@@ -4,39 +4,47 @@ A station-readiness widget for [Omarchy](https://omarchy.org/) 4.x. One drawn
 station glyph — a mast with a tip ball and signal arcs — and a small
 green/amber/red dot; click it for the expanded readiness panel.
 
-Radio audio, time sync and CAT control are all wired: the panel reports the
-source disciplining the clock, the rig's frequency and mode, and the two
-assigned PipeWire nodes, and it edits the audio assignments and the GPS mode
-inline.
+Time sync, CAT control, radio audio and TNC transport are all wired: the panel
+reports the source disciplining the clock, the rig's frequency and mode, the
+two assigned PipeWire nodes or the modem's transport, and it edits the audio,
+GPS and TNC settings inline.
 
 ## Readiness model
 
-The plugin treats station readiness as three independent checks:
+A station declares the paths it expects — **Host audio**, **TNC**, or **Both** —
+and readiness is the worst of the checks those declarations make applicable.
+The declaration is a setting, never inferred from what is plugged in.
 
-| Check | What it answers |
-|---|---|
-| **Time sync** | Which source is disciplining the clock — GPS/PPS or NTP? If GPS is configured, how far did it get: no device, gpsd down, no fix, fix without PPS, ready but not selected? A healthy NTP fallback still counts. |
-| **CAT control** | Is `hamlib` installed and `rigctld` reachable? What frequency/mode is the rig on? Is the serial device present and permitted? |
-| **Radio audio** | Are the assigned Radio RX and Radio TX nodes present on PipeWire and unmuted, and is Radio TX kept off the system default output? |
+| Check | Station path | What it answers |
+|---|---|---|
+| **Time sync** | station-wide | Which source is disciplining the clock — GPS/PPS or NTP? If GPS is configured, how far did it get: no device, gpsd down, no fix, fix without PPS, ready but not selected? A healthy NTP fallback still counts. |
+| **CAT control** | Host audio | Is `hamlib` installed and `rigctld` reachable? What frequency/mode is the rig on? Is the serial device present and permitted? |
+| **Radio audio** | Host audio | Are the assigned Radio RX and Radio TX nodes present on PipeWire and unmuted, and is Radio TX kept off the system default output? |
+| **TNC transport** | TNC | Is the assigned serial device or Bluetooth address present? Is a process already holding it? A held port is ready, and names the holder. |
 
-The overall state is the worst of the three:
+A check that no declared path needs is **not applicable**: aggregation skips
+it, the counts exclude it, and the panel never draws it. The overall state is
+the worst of the applicable checks:
 
-- **Green** — all checks ready
-- **Amber** — at least one check needs attention, none failed
-- **Red** — at least one check failed
+- **Green** — every applicable check ready
+- **Amber** — at least one applicable check needs attention, none failed
+- **Red** — at least one applicable check failed
 - **Grey** — not probed yet / incomplete data
 
-The dot is intentionally always visible. Grey is an honest "cannot answer yet"
-state rather than a fake green.
+A station declaring both paths is green only when both are. The verdict names
+each declared path — "Host audio ready · TNC needs attention" — so a working
+half stays visible. The dot is intentionally always visible, and grey is an
+honest "cannot answer yet" state rather than a fake green.
 
 ## Presentation
 
-The expanded panel is a verdict line over a three-column readout: time source,
-frequency and the assigned radio, each with a coloured rule underneath. Time
-leads with its source rather than an offset, because a clock's variance is not a
-readiness signal; radio audio leads with the assigned Radio RX node, so a
-failure still says which node is missing. The bar keeps the station glyph and a
-single dot.
+The expanded panel is a verdict line over one flat row: time sync first, then
+the declared paths' checks — two, three or four columns, decided by the
+declaration alone and never by hardware state. Time leads with its source
+rather than an offset, because a clock's variance is not a readiness signal;
+radio audio leads with the assigned Radio RX node, so a failure still says which
+node is missing. The bar keeps the station glyph and a single dot, and its
+tooltip carries a line per declared path.
 
 The glyph is drawn in QML (`StationGlyph.qml`) rather than set in an icon font.
 That keeps it legible at the bar's 18px optical canvas — the Nerd Font tower and
@@ -58,6 +66,7 @@ omarchy-station/
 ├── TimeProbe.qml          # chrony/timesyncd source health and gpsd facts
 ├── CatProbe.qml           # hamlib/rigctld discovery, serial facts, f/m/t queries
 ├── AudioProbe.qml         # PipeWire presence, mute and default-output facts
+├── TncProbe.qml           # serial holdership and paired Bluetooth facts
 ├── StationGlyph.qml       # the drawn mast glyph
 ├── Panel.qml              # expanded readiness panel and assignment picker
 ├── Readiness.js           # pure state model, ladders, parsers, ranking
@@ -66,8 +75,9 @@ omarchy-station/
 └── LICENSE
 ```
 
-`Readiness.js` has no Qt types, so the same aggregation rules, the three
-ladders, the tool-output parsers and the codec ranking are testable under Node.
+`Readiness.js` has no Qt types, so the same applicability rules, the four
+ladders, the tool-output parsers and the codec and transport rankings are
+testable under Node.
 The QML side only renders a snapshot; replacing the whole snapshot keeps the
 bar, tooltip and panel consistent. Time and CAT share `ProbedCheck.qml`'s poll
 state machine, which assembles facts off-screen and commits them in one
@@ -80,10 +90,12 @@ which stays the source of truth for type, accepted values and default.
 
 | Key | Type | Accepted values | Default | What it changes |
 |---|---|---|---|---|
-| `refreshIntervalSec` | integer | 1–60 | `5` | How often the time and CAT checks are re-probed, in seconds; radio audio updates live. CLI-only: `omarchy bar set myockey.station refreshIntervalSec 10`. |
+| `refreshIntervalSec` | integer | 1–60 | `5` | How often the time, CAT and TNC checks are re-probed, in seconds; radio audio and Bluetooth state update live. CLI-only: `omarchy bar set myockey.station refreshIntervalSec 10`. |
 | `gpsMode` | enum | `Off`, `Optional`, `Required` | `Off` | Whether GPS timing is expected, and how hard its loss bites. Editable from the panel: click Time sync or press `g`. The consequences are the [Time sync policy matrix](#time-sync), not restated here. |
+| `stationPaths` | enum | `Host audio`, `TNC`, `Both` | `Host audio` | Which station paths the station expects. `Host audio` grades CAT control and radio audio; `TNC` grades the modem transport and makes CAT and radio audio not applicable; `Both` requires every declared path to be ready. CLI-only: `omarchy bar set myockey.station stationPaths Both`. |
 | `radioRxNode` | string | any PipeWire source `node.name`, or `(empty)` | `(empty)` | The source a digital-mode app captures the rig's audio from. Editable in the audio picker: click Radio audio or press `a`. |
 | `radioTxNode` | string | any PipeWire sink `node.name`, or `(empty)` | `(empty)` | The sink a digital-mode app plays tones into. Editable in the audio picker: click Radio audio or press `a`. |
+| `tncTransport` | string | an absolute serial device path, a Bluetooth address, or `(empty)` | `(empty)` | The modem's transport. Classified by shape and graded on holdership. Editable in the TNC picker: click TNC transport or press `t`. |
 
 ## Time sync
 
@@ -214,6 +226,39 @@ install hint, and a package that is present but idle reads `rigctld not
 running`. Both fail the link. A missing `rigctl` client while `rigctld` runs is
 reported as unknown rather than faulted, because nothing is known to be broken.
 
+## TNC transport
+
+A TNC path puts the modem between the host and the rig: the modem carries the
+audio and keys the transmitter itself, so there is no host audio role and often
+no CAT link to check. Declare the path and assign the transport:
+
+```bash
+omarchy bar set myockey.station stationPaths TNC
+omarchy bar set myockey.station tncTransport /dev/ttyACM0
+# or a Bluetooth address
+omarchy bar set myockey.station tncTransport AA:BB:CC:DD:EE:4F
+```
+
+The check grades the transport and stops there. The probe resolves the path
+(so a `/dev/serial/by-id/` symlink is checked at its target) and tests
+existence, character-device-ness and permission; a scan of `/proc` names a
+process holding the port. A free port is opened read-only and closed again; a
+held port is never opened, and nothing is ever written to a modem. A held port
+reads **ready** and
+names the holder — "in use by `direwolf` (pid 4711)" — because a process using
+the declared modem is the strongest evidence the station works. A legacy
+`/dev/ttyS*` port warns: it exists and opens whether or not a modem is attached,
+so presence there proves nothing. Bluetooth is graded at paired and connected.
+See ADR 0005.
+
+No transport proves KISS: the check never claims it on the panel. Click the TNC
+column or press `t` to open the inline transport picker. It lists serial devices
+and paired Bluetooth devices, recognised modem names first, then paired but
+unrecognised, then the rest; every row says its name suggests rather than
+identifies. When a Host-audio station has a recognised modem on a serial port,
+the verdict carries one line of text — "KISS modem on `/dev/ttyACM0` — declare a
+TNC path" — never a state.
+
 ## Radio audio assignments
 
 Two roles, one node each, stored as PipeWire `node.name` in this widget's
@@ -253,7 +298,7 @@ QML lint (Qt 6):
 tmp=$(mktemp -d)
 ln -s /usr/share/omarchy/shell "$tmp/qs"
 /usr/lib/qt6/bin/qmllint -I "$tmp" -I /usr/lib/qt6/qml \
-  BarWidget.qml TimeProbe.qml CatProbe.qml AudioProbe.qml StationGlyph.qml Panel.qml
+  BarWidget.qml TimeProbe.qml CatProbe.qml AudioProbe.qml TncProbe.qml StationGlyph.qml Panel.qml
 rm -rf "$tmp"
 ```
 
@@ -282,18 +327,21 @@ shell` is the reliable way to pick up a new probe file. Remove it with
 
 ## Next
 
-1. **TNC stations** — the model is settled: a station declares its paths and a
-   modem path is graded on its transport, never on KISS (ADR 0004, ADR 0005).
-   The implementation is #4. The panel and settings still describe three checks
-   until it lands.
-2. **Top bar icon** — the station glyph and the status dot are settled; the
+1. **Bluetooth bridging** — BLE GATT and SPP bridging need an `rfcomm` binding
+   the widget must not install, so they belong in their own design; the TNC
+   check stops at paired and connected.
+2. **Host-audio station with no CAT** — a real station, and a separate design
+   (ADR 0004).
+3. **Top bar icon** — the station glyph and the status dot are settled; the
    compact icon treatment is tracked separately (#2).
 
 ## Safety
 
 - The widget never keys the rig. PTT status is read only, and there is no test
   button until a watchdog-backed keying path exists.
-- The widget never starts `rigctld` and never opens the serial device.
+- The widget never starts `rigctld` and never opens the CAT serial device.
+- A TNC port held by another process is never opened, and nothing is ever
+  written to a modem. A free TNC port is opened read-only and closed at once.
 - No automatic root configuration, no clock stepping, no service restarts from
   the UI.
 - Plugins run unsandboxed inside the long-lived Omarchy shell. Review any plugin

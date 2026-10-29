@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "author": "myockey",
   "license": "MIT",
-  "description": "Station readiness for digital-mode operators: time sync, CAT control and radio audio at a glance, with a green/amber/red bar indicator.",
+  "description": "Station readiness for digital-mode operators: time sync, CAT control, radio audio and TNC transport at a glance, with a green/amber/red bar indicator.",
   "keywords": [
     "ham radio",
     "amateur radio",
@@ -28,7 +28,7 @@
   },
   "barWidget": {
     "displayName": "Station",
-    "description": "Green/amber/red station readiness: time sync, CAT and radio audio.",
+    "description": "Green/amber/red station readiness: time sync, CAT, radio audio and TNC transport.",
     "category": "System",
     "aliases": [
       "station",
@@ -42,7 +42,9 @@
     "defaultSection": "right",
     "defaults": {
       "refreshIntervalSec": 5,
-      "gpsMode": "Off"
+      "gpsMode": "Off",
+      "stationPaths": "Host audio",
+      "tncTransport": ""
     },
     "schema": [
       {
@@ -53,7 +55,7 @@
         "max": 60,
         "step": 1,
         "defaultValue": 5,
-        "description": "How often the time source and CAT link are probed. Radio audio updates live."
+        "description": "How often the time source, CAT link and TNC transport are probed. Radio audio and Bluetooth state update live."
       },
       {
         "key": "gpsMode",
@@ -68,6 +70,18 @@
         "description": "Off: no GPS, NTP is enough. Optional: GPS is configured, so losing it warns but a fix without PPS or an unselected fix stays green. Required: losing it, a fix without PPS or an unselected fix all warn."
       },
       {
+        "key": "stationPaths",
+        "type": "enum",
+        "label": "Station paths",
+        "options": [
+          "Host audio",
+          "TNC",
+          "Both"
+        ],
+        "defaultValue": "Host audio",
+        "description": "Host audio: CAT control and radio audio over the host's soundcard. TNC: a modem carries the audio and keys the rig, so only its transport is graded and CAT and radio audio are not applicable. Both: every declared path must be ready."
+      },
+      {
         "key": "radioRxNode",
         "type": "string",
         "label": "Radio RX node name",
@@ -78,6 +92,13 @@
         "type": "string",
         "label": "Radio TX node name",
         "defaultValue": ""
+      },
+      {
+        "key": "tncTransport",
+        "type": "string",
+        "label": "TNC transport",
+        "defaultValue": "",
+        "description": "The modem's transport: an absolute serial device path such as /dev/ttyACM0, or a Bluetooth address such as AA:BB:CC:DD:EE:FF. Classified by shape and graded on holdership, never on a KISS dialogue."
       }
     ]
   }

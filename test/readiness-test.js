@@ -15,17 +15,27 @@ vm.runInContext(source, context)
 
 const R = context
 
-// Not probed: honest grey, not a fake green.
+// Not probed: honest grey, not a fake green. The snapshot keeps all four
+// checks even when a station declares only one path.
 const empty = R.emptySnapshot()
+assert.equal(R.NA, "na")
+assert.deepEqual(Object.keys(empty).sort(), ["audio", "cat", "time", "tnc"])
 assert.equal(R.overall(empty), R.UNKNOWN)
 assert.equal(R.verdict(R.UNKNOWN), "Not probed yet")
 assert.equal(R.rows(empty)[0].readout, "—")
-assert.equal(R.counts(empty).unknown, 3)
+assert.equal(R.counts(empty).unknown, 4)
+assert.equal(R.applicable(R.NA), false)
+assert.equal(R.applicable(R.UNKNOWN), true)
+assert.equal(R.applicable(R.OK), true)
+assert.equal(R.notApplicable().state, R.NA)
+assert.equal(R.notApplicable().detail, "Not applicable")
+assert.equal(R.label(R.NA), "Not applicable")
 
 const allReady = {
   time: R.check(R.OK, "NTP", "GPS mode off", "clock disciplined"),
   cat: R.check(R.OK, "14.074", "MHz USB · FT-891", "rigctld · PTT receive"),
-  audio: R.check(R.OK, "USB codec", "Radio RX and TX ready", "TX: USB codec")
+  audio: R.check(R.OK, "USB codec", "Radio RX and TX ready", "TX: USB codec"),
+  tnc: R.notApplicable()
 }
 assert.equal(R.overall(allReady), R.OK)
 assert.equal(R.rows(allReady).length, 3)
@@ -37,35 +47,181 @@ assert.equal(readyCounts.attention, 0)
 assert.equal(readyCounts.blocked, 0)
 assert.equal(readyCounts.unknown, 0)
 assert.equal(R.verdict(R.OK), "Station ready")
-assert.match(R.verdictDetail(R.OK, R.counts(allReady)), /All three checks are green/)
+assert.equal(R.verdictDetail(R.OK, R.counts(allReady), allReady, "Host audio"), "Ready for host audio")
 
 const oneWarning = {
   time: R.check(R.OK, "NTP", "GPS mode off", "clock disciplined"),
   cat: R.check(R.WARN, "—", "rig not responding", ""),
-  audio: R.check(R.OK, "USB codec", "Radio RX and TX ready", "TX: USB codec")
+  audio: R.check(R.OK, "USB codec", "Radio RX and TX ready", "TX: USB codec"),
+  tnc: R.notApplicable()
 }
 assert.equal(R.overall(oneWarning), R.WARN)
 assert.equal(R.verdict(R.WARN), "Needs attention")
-assert.match(R.verdictDetail(R.WARN, R.counts(oneWarning)), /1 of 3 checks needs attention/)
+assert.equal(
+  R.verdictDetail(R.WARN, R.counts(oneWarning), oneWarning, "Host audio"),
+  "Host audio: 1 of 3 checks needs attention"
+)
 
 const oneFailure = {
   time: R.check(R.WARN, "NTP", "GPS · no fix", "GPS lost"),
   cat: R.check(R.FAIL, "—", "rigctld not running", ""),
-  audio: R.check(R.OK, "USB codec", "Radio RX and TX ready", "TX: USB codec")
+  audio: R.check(R.OK, "USB codec", "Radio RX and TX ready", "TX: USB codec"),
+  tnc: R.notApplicable()
 }
 assert.equal(R.overall(oneFailure), R.FAIL)
 assert.equal(R.verdict(R.FAIL), "Not ready")
-assert.match(R.verdictDetail(R.FAIL, R.counts(oneFailure)), /1 check failed · 1 needs attention/)
+assert.equal(
+  R.verdictDetail(R.FAIL, R.counts(oneFailure), oneFailure, "Host audio"),
+  "Host audio not ready · 1 check failed · 1 needs attention"
+)
 assert.match(R.tooltip(oneFailure), /Station: Not ready/)
 assert.match(R.tooltip(oneFailure), /CAT control: Fault/)
 
 const partial = {
   time: R.check(R.OK, "NTP", "GPS mode off", "clock disciplined"),
   cat: R.check(R.UNKNOWN, "—", "Not probed yet", ""),
-  audio: R.check(R.OK, "USB codec", "Radio RX and TX ready", "TX: USB codec")
+  audio: R.check(R.OK, "USB codec", "Radio RX and TX ready", "TX: USB codec"),
+  tnc: R.notApplicable()
 }
 assert.equal(R.overall(partial), R.UNKNOWN)
 assert.equal(R.counts(partial).unknown, 1)
+
+// ---- Station paths: applicability and verdicts (ADR 0004) --------------
+//
+// The declaration is a setting, never inferred from hardware. A check no
+// declared path needs is `na` in the snapshot, skipped by aggregation, and
+// absent from the panel's rows. Worst-of-declared, never best-of-paths.
+
+function stationWith(overrides) {
+  const base = {
+    time: R.check(R.OK, "NTP", "GPS mode off", "clock disciplined"),
+    cat: R.check(R.OK, "14.074", "MHz · USB", "rigctld · PTT receive"),
+    audio: R.check(R.OK, "USB codec", "Radio RX and TX ready", "TX: USB codec"),
+    tnc: R.notApplicable()
+  }
+  for (const key in overrides || {}) base[key] = overrides[key]
+  return base
+}
+
+assert.equal(R.stationPathsOf("Host audio"), "host")
+assert.equal(R.stationPathsOf("TNC"), "tnc")
+assert.equal(R.stationPathsOf("Both"), "both")
+assert.equal(R.stationPathsOf("host audio"), "host")
+assert.equal(R.stationPathsOf(undefined), "host")
+assert.equal(R.declares("Both", "host"), true)
+assert.equal(R.declares("Both", "tnc"), true)
+assert.equal(R.declares("Host audio", "tnc"), false)
+assert.equal(R.declares("TNC", "host"), false)
+assert.equal(R.stationPathSettingKey(), "stationPaths")
+
+// Host-only: the TNC check is na, so it is counted and drawn nowhere.
+const hostOnly = stationWith()
+assert.equal(R.overall(hostOnly), R.OK)
+assert.equal(R.pathState(hostOnly, "host"), R.OK)
+assert.equal(R.counts(hostOnly).ready, 3)
+assert.equal(R.rows(hostOnly).length, 3)
+assert.equal(R.rows(hostOnly).map(function(row) { return row.key }).join("|"), "time|cat|audio")
+
+// TNC-only: two applicable checks, time first.
+const tncOnly = stationWith({
+  cat: R.notApplicable(),
+  audio: R.notApplicable(),
+  tnc: R.check(R.OK, "/dev/ttyACM0", "no program is using it", "USB CDC")
+})
+assert.equal(R.overall(tncOnly), R.OK)
+assert.equal(R.pathState(tncOnly, "tnc"), R.OK)
+assert.equal(R.counts(tncOnly).ready, 2)
+assert.equal(R.rows(tncOnly).map(function(row) { return row.key }).join("|"), "time|tnc")
+
+// Both: all four applicable, worst-of-declared.
+const bothReady = stationWith({
+  tnc: R.check(R.OK, "/dev/ttyACM0", "no program is using it", "USB CDC")
+})
+assert.equal(R.overall(bothReady), R.OK)
+assert.equal(R.counts(bothReady).ready, 4)
+assert.equal(R.rows(bothReady).length, 4)
+assert.equal(
+  R.verdictDetail(R.OK, R.counts(bothReady), bothReady, "Both"),
+  "Ready for host audio and TNC"
+)
+
+// A station declaring both is not green when only one path works: declaring a
+// path is a promise, and losing it is news even while the other still works.
+const bothDegraded = stationWith({
+  tnc: R.check(R.WARN, "/dev/ttyS0", "onboard serial port — cannot tell whether a modem is attached", "onboard serial")
+})
+assert.equal(R.overall(bothDegraded), R.WARN)
+assert.equal(
+  R.verdictDetail(R.WARN, R.counts(bothDegraded), bothDegraded, "Both"),
+  "Host audio ready · TNC needs attention"
+)
+
+const tncFault = stationWith({
+  tnc: R.check(R.FAIL, "/dev/ttyACM0", "serial device /dev/ttyACM0 not present", "USB CDC")
+})
+assert.equal(R.overall(tncFault), R.FAIL)
+assert.equal(
+  R.verdictDetail(R.FAIL, R.counts(tncFault), tncFault, "Both"),
+  "Host audio ready · TNC not ready"
+)
+
+// A TNC-only station is green on two checks and says so.
+assert.equal(
+  R.verdictDetail(R.OK, R.counts(tncOnly), tncOnly, "TNC"),
+  "Ready for TNC"
+)
+assert.equal(
+  R.verdictDetail(R.WARN, R.counts(stationWith({
+    cat: R.notApplicable(),
+    audio: R.notApplicable(),
+    tnc: R.check(R.WARN, "/dev/ttyS0", "onboard serial port — cannot tell whether a modem is attached", "onboard serial")
+  })), stationWith({
+    cat: R.notApplicable(),
+    audio: R.notApplicable(),
+    tnc: R.check(R.WARN, "/dev/ttyS0", "onboard serial port — cannot tell whether a modem is attached", "onboard serial")
+  }), "TNC"),
+  "TNC: 1 of 2 checks needs attention"
+)
+
+// A snapshot with every check na is not a green station, and it draws no rows.
+const nothingApplicable = {
+  time: R.notApplicable(),
+  cat: R.notApplicable(),
+  audio: R.notApplicable(),
+  tnc: R.notApplicable()
+}
+assert.equal(R.overall(nothingApplicable), R.UNKNOWN)
+assert.equal(R.rows(nothingApplicable).length, 0)
+const nothingCounts = R.counts(nothingApplicable)
+assert.equal(nothingCounts.ready, 0)
+assert.equal(nothingCounts.attention, 0)
+assert.equal(nothingCounts.blocked, 0)
+assert.equal(nothingCounts.unknown, 0)
+
+// No applicable row is ever handed to the panel.
+for (const snapshot of [hostOnly, tncOnly, bothReady, bothDegraded, nothingApplicable])
+  for (const row of R.rows(snapshot)) assert.notEqual(row.state, R.NA)
+
+// The tooltip gains one line per declared path.
+assert.match(R.tooltip(tncOnly, "TNC"), /TNC: ready/)
+assert.doesNotMatch(R.tooltip(tncOnly, "TNC"), /Host audio:/)
+assert.match(R.tooltip(bothDegraded, "Both"), /Host audio: ready/)
+assert.match(R.tooltip(bothDegraded, "Both"), /TNC: needs attention/)
+
+// Evidence of an undeclared path is one line of verdict text, never a state.
+const undeclaredHint = "KISS modem on `/dev/ttyACM0` — declare a TNC path"
+assert.equal(
+  R.verdictDetail(R.OK, R.counts(hostOnly), hostOnly, "Host audio", undeclaredHint),
+  "Ready for host audio · " + undeclaredHint
+)
+assert.match(
+  R.tooltip(hostOnly, "Host audio", undeclaredHint),
+  new RegExp("KISS modem on `/dev/ttyACM0` — declare a TNC path")
+)
+assert.equal(
+  R.verdictDetail(R.OK, R.counts(tncOnly), tncOnly, "TNC", undeclaredHint),
+  "Ready for TNC"
+)
 
 // ---- Radio audio: the state ladder (ADR 0002) --------------------------
 //
@@ -938,14 +1094,314 @@ assert.equal(R.catFacts().reply.freq, 0)
 const station = {
   time: R.timeCheck(timeInput({ gpsMode: "optional", gps: { gpsd: true, devices: 1, mode: 0 } })),
   cat: R.check(R.OK, "14.074", "MHz · USB", "rigctld · PTT receive"),
-  audio: R.check(R.OK, "USB codec", "Radio RX and TX ready", "TX: USB codec")
+  audio: R.check(R.OK, "USB codec", "Radio RX and TX ready", "TX: USB codec"),
+  tnc: R.notApplicable()
 }
 assert.equal(R.overall(station), R.WARN)
 assert.equal(R.verdict(R.WARN), "Needs attention")
-assert.match(R.verdictDetail(R.WARN, R.counts(station)), /1 of 3 checks needs attention/)
+assert.match(R.verdictDetail(R.WARN, R.counts(station), station, "Host audio"), /1 of 3 checks needs attention/)
 assert.equal(R.rows(station)[0].detail, "GPS · no fix")
 assert.equal(R.rows(station)[0].meta, "GPS lost")
 assert.match(R.tooltip(station), /Time sync: Check — GPS · no fix/)
+
+// ---- TNC transport: the holdership ladder (ADR 0005) --------------------
+//
+// `tncCheck` is the seam: the probe resolves the transport's shape and the
+// facts around it, and the ladder owns the rung order and wording. No rung
+// opens a held port, writes to a modem, or claims that KISS was proven.
+
+function tncInput(overrides) {
+  const base = R.tncFacts()
+  const given = overrides || {}
+  const merged = Object.assign({}, base, given)
+  merged.serial = Object.assign({}, base.serial, given.serial || {})
+  merged.bluetooth = Object.assign({}, base.bluetooth, given.bluetooth || {})
+  return merged
+}
+
+assert.equal(R.tncFacts().assigned, "")
+assert.equal(R.tncFacts().serial.present, false)
+assert.equal(R.tncFacts().serial.holderPid, 0)
+assert.equal(R.tncFacts().bluetooth.connected, false)
+assert.equal(R.tncFacts().bluetooth.missing, false)
+
+// The setting is classified by shape, never by guesswork.
+assert.equal(R.tncTransportKind("/dev/ttyACM0"), "serial")
+assert.equal(R.tncTransportKind("/dev/ttyUSB1"), "serial")
+assert.equal(R.tncTransportKind("AA:BB:CC:DD:EE:4F"), "bluetooth")
+assert.equal(R.tncTransportKind("aa:bb:cc:dd:ee:4f"), "bluetooth")
+assert.equal(R.tncTransportKind("ttyACM0"), "")
+assert.equal(R.tncTransportKind(""), "")
+
+// Rung 1: a declared TNC path with nothing assigned is unknown, not green.
+const unassignedTnc = R.tncCheck(tncInput())
+assert.equal(unassignedTnc.state, R.UNKNOWN)
+assert.equal(unassignedTnc.readout, "—")
+assert.equal(unassignedTnc.detail, "No TNC transport assigned")
+assert.equal(unassignedTnc.meta, "choose a transport")
+
+// Rung 2: an assigned serial path that is gone fails and names the path.
+const missingTnc = R.tncCheck(tncInput({ assigned: "/dev/ttyACM0" }))
+assert.equal(missingTnc.state, R.FAIL)
+assert.equal(missingTnc.readout, "/dev/ttyACM0")
+assert.equal(missingTnc.detail, "serial device /dev/ttyACM0 not present")
+assert.equal(missingTnc.meta, "USB CDC")
+
+// Rung 3: something exists there, but it is not a character device.
+const notTty = R.tncCheck(tncInput({
+  assigned: "/dev/ttyACM0",
+  serial: { present: true, charDevice: false }
+}))
+assert.equal(notTty.state, R.FAIL)
+assert.equal(notTty.detail, "/dev/ttyACM0 is not a character device")
+
+// Rung 4: permission denied names the group the operator has to join.
+const deniedTnc = R.tncCheck(tncInput({
+  assigned: "/dev/ttyACM0",
+  serial: { present: true, charDevice: true, readable: false }
+}))
+assert.equal(deniedTnc.state, R.FAIL)
+assert.equal(deniedTnc.detail, "permission denied on /dev/ttyACM0")
+assert.equal(deniedTnc.meta, "add your user to the dialout group")
+
+// Rung 5: a port held by another process is ok — it is the state a working
+// TNC station is in while it is being used — and the holder is named. A held
+// port is never opened to confirm it.
+const heldTnc = R.tncCheck(tncInput({
+  assigned: "/dev/ttyACM0",
+  serial: {
+    present: true,
+    charDevice: true,
+    readable: true,
+    opens: false,
+    holderPid: 4711,
+    holderName: "direwolf"
+  }
+}))
+assert.equal(heldTnc.state, R.OK)
+assert.equal(heldTnc.readout, "/dev/ttyACM0")
+assert.equal(heldTnc.detail, "in use by direwolf (pid 4711)")
+assert.equal(heldTnc.meta, "pid 4711")
+
+// Holdership outranks our own permission: a port the operator cannot read may
+// still be held, and the working station is not failed for it. The holder is
+// visible in /proc without opening the port.
+const heldWithoutAccess = R.tncCheck(tncInput({
+  assigned: "/dev/ttyACM0",
+  serial: {
+    present: true,
+    charDevice: true,
+    readable: false,
+    holderPid: 4711,
+    holderName: "direwolf"
+  }
+}))
+assert.equal(heldWithoutAccess.state, R.OK)
+assert.equal(heldWithoutAccess.detail, "in use by direwolf (pid 4711)")
+
+// A holder whose name cannot be read is still named by pid.
+const anonymousHolder = R.tncCheck(tncInput({
+  assigned: "/dev/ttyACM0",
+  serial: { present: true, charDevice: true, readable: true, holderPid: 99, holderName: "" }
+}))
+assert.equal(anonymousHolder.state, R.OK)
+assert.equal(anonymousHolder.detail, "in use by pid 99")
+
+// Rung 6: a legacy onboard port exists and opens whether or not a modem is
+// attached, so presence there proves nothing and the check warns.
+const onboardTnc = R.tncCheck(tncInput({
+  assigned: "/dev/ttyS0",
+  serial: { present: true, charDevice: true, readable: true, opens: true, onboard: true }
+}))
+assert.equal(onboardTnc.state, R.WARN)
+assert.equal(onboardTnc.readout, "/dev/ttyS0")
+assert.equal(onboardTnc.detail, "onboard serial port — cannot tell whether a modem is attached")
+assert.equal(onboardTnc.meta, "onboard serial")
+
+// Rung 7: a free port that opens read-only and closes is ok. The meta names
+// the transport kind, never a modem model.
+const freeTnc = R.tncCheck(tncInput({
+  assigned: "/dev/ttyACM0",
+  serial: { present: true, charDevice: true, readable: true, opens: true }
+}))
+assert.equal(freeTnc.state, R.OK)
+assert.equal(freeTnc.detail, "no program is using it")
+assert.equal(freeTnc.meta, "USB CDC")
+
+// A readable free port that will not open is a fault, not a cautious green.
+const unopenableTnc = R.tncCheck(tncInput({
+  assigned: "/dev/ttyUSB0",
+  serial: { present: true, charDevice: true, readable: true, opens: false }
+}))
+assert.equal(unopenableTnc.state, R.FAIL)
+assert.equal(unopenableTnc.detail, "cannot open /dev/ttyUSB0 read-only")
+assert.equal(unopenableTnc.meta, "USB serial")
+
+// Rung 8: Bluetooth is graded at paired and connected, never at GATT or SPP.
+// An address absent from BlueZ's list is "not found", not a claim that it is
+// unpaired.
+const missingBluetooth = R.tncCheck(tncInput({
+  assigned: "AA:BB:CC:DD:EE:4F",
+  bluetooth: { missing: true, address: "AA:BB:CC:DD:EE:4F" }
+}))
+assert.equal(missingBluetooth.state, R.FAIL)
+assert.equal(missingBluetooth.readout, "AA:BB:CC:DD:EE:4F")
+assert.equal(missingBluetooth.detail, "Bluetooth device not found")
+assert.equal(missingBluetooth.meta, "AA:BB:CC:DD:EE:4F")
+
+const unpairedTnc = R.tncCheck(tncInput({
+  assigned: "AA:BB:CC:DD:EE:4F",
+  bluetooth: {
+    paired: false,
+    connected: false,
+    name: "Mobilinkd TNC4",
+    address: "AA:BB:CC:DD:EE:4F"
+  }
+}))
+assert.equal(unpairedTnc.state, R.FAIL)
+assert.equal(unpairedTnc.readout, "Mobilinkd TNC4")
+assert.equal(unpairedTnc.detail, "Bluetooth device is not paired")
+assert.equal(unpairedTnc.meta, "AA:BB:CC:DD:EE:4F")
+
+const unconnectedTnc = R.tncCheck(tncInput({
+  assigned: "AA:BB:CC:DD:EE:4F",
+  bluetooth: {
+    paired: true,
+    connected: false,
+    name: "Mobilinkd TNC4",
+    address: "AA:BB:CC:DD:EE:4F"
+  }
+}))
+assert.equal(unconnectedTnc.state, R.FAIL)
+assert.equal(unconnectedTnc.detail, "Bluetooth device is not connected")
+
+const connectedTnc = R.tncCheck(tncInput({
+  assigned: "AA:BB:CC:DD:EE:4F",
+  bluetooth: {
+    paired: true,
+    connected: true,
+    name: "Mobilinkd TNC4",
+    address: "AA:BB:CC:DD:EE:4F"
+  }
+}))
+assert.equal(connectedTnc.state, R.OK)
+assert.equal(connectedTnc.readout, "Mobilinkd TNC4")
+assert.equal(connectedTnc.detail, "connected over Bluetooth")
+assert.equal(connectedTnc.meta, "AA:BB:CC:DD:EE:4F")
+
+const unnamedBluetooth = R.tncCheck(tncInput({
+  assigned: "AA:BB:CC:DD:EE:4F",
+  bluetooth: { paired: true, connected: true, address: "AA:BB:CC:DD:EE:4F" }
+}))
+assert.equal(unnamedBluetooth.readout, "AA:BB:CC:DD:EE:4F")
+
+// An assignment that is neither shape is a configuration fault.
+const gibberish = R.tncCheck(tncInput({ assigned: "ttyACM0" }))
+assert.equal(gibberish.state, R.FAIL)
+assert.equal(gibberish.readout, "ttyACM0")
+assert.equal(gibberish.detail, "not a device path or Bluetooth address")
+
+// The serial report parser turns the probe's key=value lines into the shape
+// the ladder reads, and leaves neutral facts when it got nothing.
+const serialReport = R.tncSerialFacts([
+  "present=1",
+  "char=1",
+  "read=1",
+  "opens=1",
+  "onboard=0",
+  "holder=4711",
+  "holder_name=direwolf"
+].join("\n"), "/dev/ttyACM0")
+assert.equal(serialReport.present, true)
+assert.equal(serialReport.charDevice, true)
+assert.equal(serialReport.readable, true)
+assert.equal(serialReport.opens, true)
+assert.equal(serialReport.onboard, false)
+assert.equal(serialReport.holderPid, 4711)
+assert.equal(serialReport.holderName, "direwolf")
+
+const emptySerialReport = R.tncSerialFacts("", "/dev/ttyACM0")
+assert.equal(emptySerialReport.present, false)
+assert.equal(emptySerialReport.charDevice, false)
+assert.equal(emptySerialReport.holderPid, 0)
+
+// ---- TNC transport: candidate ranking ----------------------------------
+//
+// The picker lists serial devices and paired Bluetooth devices. A name
+// identifies a chip family or a product string, never a modem, so every row
+// says it suggests rather than identifies. Recognised modem names lead, then
+// paired Bluetooth devices, then everything else.
+
+const TNC_CANDIDATES = R.tncCandidates([
+  "serial|/dev/ttyUSB0|FTDI_FT232R_USB_UART",
+  "serial|/dev/ttyACM0|Mobilinkd_TNC4",
+  "serial|/dev/ttyS4|"
+].join("\n"), [
+  { address: "AA:BB:CC:DD:EE:02", name: "Mobilinkd TNC3", paired: true, connected: true },
+  { address: "AA:BB:CC:DD:EE:01", name: "Headset", paired: true, connected: false },
+  { address: "AA:BB:CC:DD:EE:03", name: "Phone", paired: false, connected: false }
+])
+
+assert.equal(
+  TNC_CANDIDATES.map(function(candidate) { return candidate.label }).join("|"),
+  "Mobilinkd TNC3|Mobilinkd TNC4|Headset|/dev/ttyS4|FTDI FT232R USB UART"
+)
+assert.equal(
+  TNC_CANDIDATES.map(function(candidate) { return candidate.tier }).join("|"),
+  [R.TNC_TIER_RECOGNISED, R.TNC_TIER_RECOGNISED, R.TNC_TIER_PAIRED,
+    R.TNC_TIER_OTHER, R.TNC_TIER_OTHER].join("|")
+)
+for (const candidate of TNC_CANDIDATES)
+  assert.match(candidate.reason, /suggests rather than identifies/)
+
+const recognisedSerial = TNC_CANDIDATES[1]
+assert.equal(recognisedSerial.kind, "serial")
+assert.equal(recognisedSerial.value, "/dev/ttyACM0")
+assert.equal(recognisedSerial.description, "/dev/ttyACM0")
+assert.equal(recognisedSerial.reason, "recognised modem name — suggests rather than identifies")
+assert.equal(TNC_CANDIDATES[2].reason, "paired Bluetooth device — suggests rather than identifies")
+assert.equal(TNC_CANDIDATES[3].reason, "onboard serial — suggests rather than identifies")
+
+// Unpaired Bluetooth devices are not transports the station can use yet.
+assert.ok(TNC_CANDIDATES.every(function(candidate) {
+  return candidate.value !== "AA:BB:CC:DD:EE:03"
+}))
+
+// Trusted is not paired: BlueZ lets an operator trust an unbonded device.
+assert.equal(R.tncCandidates("", [
+  { address: "AA:BB:CC:DD:EE:05", name: "Trusted", paired: false, bonded: false, trusted: true }
+]).length, 0)
+
+// An undeclared TNC path with a recognised modem on a serial port is one line
+// of text, never a state. The serial candidate is preferred over a Bluetooth
+// one because the hint names a path.
+assert.equal(
+  R.tncHint(TNC_CANDIDATES),
+  "KISS modem on `/dev/ttyACM0` — declare a TNC path"
+)
+assert.equal(R.tncHint([]), "")
+assert.equal(R.tncHint(R.tncCandidates("", [
+  { address: "AA:BB:CC:DD:EE:04", name: "Mobilinkd TNC4", paired: true, connected: true }
+])), "KISS modem on `AA:BB:CC:DD:EE:04` — declare a TNC path")
+
+assert.equal(R.tncCandidates("", []).length, 0)
+assert.equal(R.tncCandidates(undefined, undefined).length, 0)
+
+// The picker's rows mark the assigned transport, offer a Clear row only when
+// something is assigned, and open the cursor on the assignment.
+const tncRows = R.tncTransportRows(TNC_CANDIDATES, "/dev/ttyACM0")
+assert.equal(tncRows[0].kind, "header")
+const assignedTncRow = tncRows.filter(function(row) { return row.kind === "tnc" && row.assigned })[0]
+assert.equal(assignedTncRow.value, "/dev/ttyACM0")
+const clearTncRow = tncRows.filter(function(row) { return row.kind === "clear" })[0]
+assert.equal(clearTncRow.role, "tnc")
+assert.equal(R.tncTransportCursor(TNC_CANDIDATES, "/dev/ttyACM0"), 1)
+assert.equal(R.tncTransportCursor(TNC_CANDIDATES, "AA:BB:CC:DD:EE:01"), 2)
+assert.equal(R.tncTransportCursor([], ""), 0)
+assert.equal(
+  R.tncTransportRows([], "").filter(function(row) { return row.kind === "clear" }).length,
+  0
+)
 
 // ---- Settings reference: README agrees with the manifest ----------------
 //
@@ -1017,6 +1473,21 @@ assert.equal(
   gpsEntry.options.join("|")
 )
 assert.equal(R.gpsModeSettingKey(), gpsEntry.key)
+
+// The station-path vocabulary and the transport key are pinned the same way.
+const pathsEntry = schema.filter(function(entry) { return entry.key === "stationPaths" })[0]
+assert.equal(pathsEntry.type, "enum")
+assert.equal(pathsEntry.defaultValue, "Host audio")
+assert.equal(
+  R.STATION_PATH_OPTIONS.map(function(option) { return option.value }).join("|"),
+  pathsEntry.options.join("|")
+)
+assert.equal(R.stationPathSettingKey(), pathsEntry.key)
+
+const transportEntry = schema.filter(function(entry) { return entry.key === "tncTransport" })[0]
+assert.equal(transportEntry.type, "string")
+assert.equal(transportEntry.defaultValue, "")
+assert.equal(R.tncSettingKey(), transportEntry.key)
 
 // The policy matrix stays in the Time sync section; the settings table points
 // at it instead of restating it.

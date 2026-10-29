@@ -16,13 +16,18 @@ var UNKNOWN = "unknown"
 var OK = "ok"
 var WARN = "warn"
 var FAIL = "fail"
+// A check no declared station path needs. It is neither a pass nor a failure:
+// aggregation skips it, the verdict's counts exclude it, and the panel never
+// draws it. See ADR 0004.
+var NA = "na"
 
-var KEYS = ["time", "cat", "audio"]
+var KEYS = ["time", "cat", "audio", "tnc"]
 
 var LABELS = {
   time: "Time sync",
   cat: "CAT control",
-  audio: "Radio audio"
+  audio: "Radio audio",
+  tnc: "TNC transport"
 }
 
 var STATES = {
@@ -45,6 +50,11 @@ var STATES = {
     label: "Not ready",
     short: "Fault",
     color: "#d36f6f"
+  },
+  na: {
+    label: "Not applicable",
+    short: "N/A",
+    color: "#8b9198"
   }
 }
 
@@ -65,7 +75,7 @@ function check(state, readout, detail, meta) {
 }
 
 function emptySnapshot() {
-  return { time: notProbed(), cat: notProbed(), audio: notProbed() }
+  return { time: notProbed(), cat: notProbed(), audio: notProbed(), tnc: notProbed() }
 }
 
 function text(value) {
@@ -76,6 +86,107 @@ function text(value) {
 // rather than red while the first answer is still in flight.
 function notProbed() {
   return check(UNKNOWN, "—", "Not probed yet", "")
+}
+
+// A check no declared path needs. The state exists in the fixed snapshot shape
+// so every probe can keep writing its own key; the panel and aggregation are
+// the places that drop it.
+function notApplicable() {
+  return check(NA, "—", "Not applicable", "")
+}
+
+function applicable(state) {
+  return state !== NA
+}
+
+// ---- Station paths ------------------------------------------------------
+//
+// ADR 0004: a station declares the paths it expects, never inferred from what
+// is plugged in. Host audio needs CAT and radio audio; TNC needs the modem
+// transport. Time sync serves the station as a whole, so both paths include it
+// exactly once.
+
+var STATION_PATH_KEY = "stationPaths"
+
+var PATH_HOST = "host"
+var PATH_TNC = "tnc"
+var PATH_BOTH = "both"
+
+// The manifest's values, in its order. The consequence of each lives in the
+// manifest description; the model only needs the values.
+var STATION_PATH_DEFAULT = "Host audio"
+
+var STATION_PATH_OPTIONS = [
+  { value: STATION_PATH_DEFAULT },
+  { value: "TNC" },
+  { value: "Both" }
+]
+
+function stationPathSettingKey() {
+  return STATION_PATH_KEY
+}
+
+// The setting is case-insensitive and tolerant of the manifest's label; an
+// unrecognised value is the default, Host audio.
+function stationPathsOf(value) {
+  var raw = text(value).trim().toLowerCase().replace(/[-\s]/g, "")
+  if (raw === PATH_TNC) return PATH_TNC
+  if (raw === PATH_BOTH) return PATH_BOTH
+  return PATH_HOST
+}
+
+function declares(value, path) {
+  var declared = stationPathsOf(value)
+  return declared === PATH_BOTH || declared === path
+}
+
+function pathChecks(path) {
+  return path === PATH_TNC ? ["time", "tnc"] : ["time", "cat", "audio"]
+}
+
+function worstState(states) {
+  var found = false
+  var anyWarn = false
+  var anyUnknown = false
+  for (var i = 0; i < states.length; i++) {
+    var state = states[i]
+    if (!applicable(state)) continue
+    found = true
+    if (state === FAIL) return FAIL
+    if (state === WARN) anyWarn = true
+    else if (state !== OK) anyUnknown = true
+  }
+  if (anyWarn) return WARN
+  if (anyUnknown) return UNKNOWN
+  return found ? OK : UNKNOWN
+}
+
+function pathState(snapshot, path) {
+  var keys = pathChecks(path)
+  var states = []
+  for (var i = 0; i < keys.length; i++) states.push(stateOf(snapshot, keys[i]))
+  return worstState(states)
+}
+
+function pathTitle(path) {
+  return path === PATH_TNC ? "TNC" : "Host audio"
+}
+
+function pathWord(state) {
+  if (state === OK) return "ready"
+  if (state === WARN) return "needs attention"
+  if (state === FAIL) return "not ready"
+  if (state === NA) return "not applicable"
+  return "not probed"
+}
+
+function pathPhrase(path, state) {
+  return pathTitle(path) + " " + pathWord(state)
+}
+
+function capitalizeFirst(value) {
+  var raw = text(value)
+  return raw === "" ? raw : raw.charAt(0).toUpperCase() + raw.slice(1)
 }
 
 // ---- Time sync ----------------------------------------------------------
@@ -562,6 +673,328 @@ function rigError(value) {
   return ""
 }
 
+// ---- TNC transport ------------------------------------------------------
+//
+// ADR 0005: readiness is transport holdership, never a KISS dialogue. The
+// widget grades the transport the operator assigned and stops there: no
+// identification frame proves a generic modem, and opening a port another
+// process holds would steal inbound frames from the station being judged.
+//
+// `input` is:
+//
+//   assigned    the tncTransport setting: an absolute device path or a
+//               Bluetooth address, classified by shape
+//   serial      { present, charDevice, readable, opens, holderPid,
+//                 holderName, onboard }
+//   bluetooth   { paired, connected, name, address }
+//
+// A held port reads ok and names the holder. That is the state a working TNC
+// station is in while it is being used, so failing it would turn red on
+// exactly the station that works.
+
+var TNC_SETTING_KEY = "tncTransport"
+
+function tncSettingKey() {
+  return TNC_SETTING_KEY
+}
+
+// The neutral fact set a probe starts from, and the shape tncCheck reads.
+function tncFacts() {
+  return {
+    assigned: "",
+    serial: {
+      present: false,
+      charDevice: false,
+      readable: false,
+      opens: false,
+      holderPid: 0,
+      holderName: "",
+      onboard: false
+    },
+    bluetooth: {
+      missing: false,
+      paired: false,
+      connected: false,
+      name: "",
+      address: ""
+    }
+  }
+}
+
+// The setting holds either an absolute device path or a Bluetooth address.
+// Shape is the only classifier: an unrecognised string is a configuration
+// fault, never a guess.
+function tncTransportKind(value) {
+  var raw = text(value).trim()
+  if (raw === "") return ""
+  if (raw.charAt(0) === "/") return "serial"
+  if (/^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/.test(raw)) return "bluetooth"
+  return ""
+}
+
+// Meta names the transport kind, never a modem model: a path identifies a
+// chip family and a USB CDC port says nothing about KISS.
+function tncSerialKind(path) {
+  var raw = text(path)
+  if (raw.indexOf("/dev/ttyACM") === 0) return "USB CDC"
+  if (raw.indexOf("/dev/ttyUSB") === 0) return "USB serial"
+  if (raw.indexOf("/dev/ttyS") === 0) return "onboard serial"
+  return "serial"
+}
+
+function tncCheck(input) {
+  var facts = input || {}
+  var assigned = text(facts.assigned).trim()
+  var kind = tncTransportKind(assigned)
+
+  if (assigned === "")
+    return check(UNKNOWN, "—", "No TNC transport assigned", "choose a transport")
+
+  if (kind === "bluetooth") {
+    var bluetooth = facts.bluetooth || {}
+    var address = text(bluetooth.address) || assigned
+    var name = text(bluetooth.name)
+    var readout = name === "" ? address : name
+    // The address is assigned but the device is not in BlueZ's list: saying it
+    // is unpaired would be a factual claim the probe cannot make.
+    if (bluetooth.missing === true)
+      return check(FAIL, readout, "Bluetooth device not found", address)
+    if (bluetooth.paired !== true)
+      return check(FAIL, readout, "Bluetooth device is not paired", address)
+    if (bluetooth.connected !== true)
+      return check(FAIL, readout, "Bluetooth device is not connected", address)
+    return check(OK, readout, "connected over Bluetooth", address)
+  }
+
+  if (kind !== "serial")
+    return check(FAIL, assigned, "not a device path or Bluetooth address", "")
+
+  var serial = facts.serial || {}
+  var transport = tncSerialKind(assigned)
+
+  if (serial.present !== true)
+    return check(FAIL, assigned, "serial device " + assigned + " not present", transport)
+
+  if (serial.charDevice !== true)
+    return check(FAIL, assigned, assigned + " is not a character device", transport)
+
+  // Held outranks permission and the onboard warning: another process using
+  // the port is the strongest evidence the station works, and the port must
+  // not be opened. The holder is visible in /proc even when we cannot read it.
+  var holderPid = Number(serial.holderPid) || 0
+  if (holderPid > 0) {
+    var holderName = text(serial.holderName)
+    var holder = holderName === ""
+      ? "in use by pid " + holderPid
+      : "in use by " + holderName + " (pid " + holderPid + ")"
+    return check(OK, assigned, holder, "pid " + holderPid)
+  }
+
+  if (serial.readable !== true)
+    return check(FAIL, assigned, "permission denied on " + assigned, "add your user to the dialout group")
+
+  if (serial.onboard === true)
+    return check(WARN, assigned,
+      "onboard serial port — cannot tell whether a modem is attached", "onboard serial")
+
+  if (serial.opens !== true)
+    return check(FAIL, assigned, "cannot open " + assigned + " read-only", transport)
+
+  return check(OK, assigned, "no program is using it", transport)
+}
+
+// The serial report is the small shell probe in TncProbe.qml: presence,
+// character-device-ness, our own read permission, the holding pid, and whether
+// the free port opened read-only and closed again.
+function tncSerialFacts(value, path) {
+  var facts = tncFacts().serial
+  var rows = splitLines(value)
+  for (var i = 0; i < rows.length; i++) {
+    var split = rows[i].indexOf("=")
+    if (split < 0) continue
+    var key = rows[i].slice(0, split).trim()
+    var raw = rows[i].slice(split + 1).trim()
+
+    if (key === "present") facts.present = raw === "1"
+    else if (key === "char") facts.charDevice = raw === "1"
+    else if (key === "read") facts.readable = raw === "1"
+    else if (key === "opens") facts.opens = raw === "1"
+    else if (key === "onboard") facts.onboard = raw === "1"
+    else if (key === "holder") facts.holderPid = Number(raw) || 0
+    else if (key === "holder_name") facts.holderName = raw
+  }
+  // An onboard port is known from the path even if the report stopped early.
+  if (text(path).indexOf("/dev/ttyS") === 0) facts.onboard = true
+  return facts
+}
+
+// ---- TNC transport: candidate ranking ----------------------------------
+//
+// A candidate name identifies a chip family or a product string, never a
+// modem: a Mobilinkd product string suggests a TNC, and so does any name
+// carrying "TNC", but neither proves KISS. Recognised names lead, then paired
+// Bluetooth devices, then the rest. Every reason says "suggests rather than
+// identifies".
+
+var TNC_TIER_RECOGNISED = 0
+var TNC_TIER_PAIRED = 1
+var TNC_TIER_OTHER = 2
+
+var TNC_RECOGNISED_NAMES = ["mobilinkd", "tnc"]
+
+var TNC_RECOGNISED_REASON = "recognised modem name — suggests rather than identifies"
+var TNC_PAIRED_REASON = "paired Bluetooth device — suggests rather than identifies"
+
+function tncRecognisedName(value) {
+  var lowered = text(value).toLowerCase()
+  for (var i = 0; i < TNC_RECOGNISED_NAMES.length; i++)
+    if (lowered.indexOf(TNC_RECOGNISED_NAMES[i]) !== -1) return true
+  return false
+}
+
+function tncPrettyModel(value) {
+  return text(value).replace(/_/g, " ").trim()
+}
+
+function tncSerialCandidates(value) {
+  var result = []
+  var rows = splitLines(value)
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i].trim()
+    if (row.indexOf("serial|") !== 0) continue
+    var rest = row.slice(7)
+    var split = rest.indexOf("|")
+    var path = text(split < 0 ? rest : rest.slice(0, split)).trim()
+    if (path === "") continue
+    var model = tncPrettyModel(split < 0 ? "" : rest.slice(split + 1))
+    var label = model === "" ? path : model
+    var recognised = tncRecognisedName(label) || tncRecognisedName(path)
+    result.push({
+      kind: "serial",
+      value: path,
+      label: label,
+      description: model === "" ? "" : path,
+      reason: recognised ? TNC_RECOGNISED_REASON
+        : tncSerialKind(path) + " — suggests rather than identifies",
+      tier: recognised ? TNC_TIER_RECOGNISED : TNC_TIER_OTHER
+    })
+  }
+  return result
+}
+
+function tncBluetoothCandidates(devices) {
+  var result = []
+  var list = devices && devices.length ? devices : []
+  for (var i = 0; i < list.length; i++) {
+    var device = list[i] || {}
+    // Trusted is not paired: BlueZ lets an operator trust a device without
+    // bonding it, and trusting it does not make it a transport.
+    var paired = device.paired === true || device.bonded === true
+    if (!paired) continue
+    var address = text(device.address).trim()
+    if (address === "") continue
+    var name = text(device.name) || text(device.deviceName) || address
+    var recognised = tncRecognisedName(name)
+    result.push({
+      kind: "bluetooth",
+      value: address,
+      label: name,
+      description: address,
+      reason: recognised ? TNC_RECOGNISED_REASON : TNC_PAIRED_REASON,
+      tier: recognised ? TNC_TIER_RECOGNISED : TNC_TIER_PAIRED,
+      paired: true,
+      connected: device.connected === true
+    })
+  }
+  return result
+}
+
+// Deterministic within a tier: label, then value. Plain string comparison, not
+// localeCompare, so two shells on the same devices agree.
+function compareTncCandidates(left, right) {
+  if (left.tier !== right.tier) return left.tier - right.tier
+  if (left.label !== right.label) return left.label < right.label ? -1 : 1
+  if (left.value !== right.value) return left.value < right.value ? -1 : 1
+  return 0
+}
+
+function tncCandidates(serialText, bluetoothDevices) {
+  var result = tncSerialCandidates(serialText).concat(tncBluetoothCandidates(bluetoothDevices))
+  result.sort(compareTncCandidates)
+  return result
+}
+
+// Evidence of an undeclared path is a line of verdict text, never a state. A
+// serial candidate is preferred because the hint can name a device path.
+function tncHint(candidates) {
+  var list = candidates && candidates.length ? candidates : []
+  var fallback = null
+  for (var i = 0; i < list.length; i++) {
+    if (list[i].tier !== TNC_TIER_RECOGNISED) continue
+    if (list[i].kind === "serial") return tncHintLine(list[i])
+    if (!fallback) fallback = list[i]
+  }
+  return fallback ? tncHintLine(fallback) : ""
+}
+
+function tncHintLine(candidate) {
+  return "KISS modem on `" + text(candidate.value) + "` — declare a TNC path"
+}
+
+function sameTncTransport(left, right) {
+  var first = text(left).trim()
+  var second = text(right).trim()
+  if (first === "" || second === "") return first === second
+  if (tncTransportKind(first) === "bluetooth" && tncTransportKind(second) === "bluetooth")
+    return first.toLowerCase() === second.toLowerCase()
+  return first === second
+}
+
+// The picker's rows: a header, one row per candidate carrying the reason the
+// name only suggests a modem, and a Clear row when something is assigned.
+function tncTransportRows(candidates, current) {
+  var list = candidates && candidates.length ? candidates : []
+  var rows = [{ kind: "header", selectable: false, text: "TNC transport" }]
+  for (var i = 0; i < list.length; i++) {
+    var candidate = list[i]
+    rows.push({
+      kind: "tnc",
+      selectable: true,
+      value: text(candidate.value),
+      label: text(candidate.label) || text(candidate.value),
+      description: text(candidate.description),
+      reason: text(candidate.reason),
+      assigned: sameTncTransport(candidate.value, current)
+    })
+  }
+  if (list.length === 0)
+    rows.push({
+      kind: "empty",
+      selectable: false,
+      text: "No serial or paired Bluetooth devices present"
+    })
+  if (text(current).trim() !== "")
+    rows.push({
+      kind: "clear",
+      selectable: true,
+      role: "tnc",
+      label: "Clear TNC transport"
+    })
+  return rows
+}
+
+// The cursor opens on the assigned transport's row.
+function tncTransportCursor(candidates, current) {
+  var rows = tncTransportRows(candidates, current)
+  var slot = 0
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i].selectable !== true) continue
+    if (rows[i].assigned === true) return slot
+    slot++
+  }
+  return 0
+}
+
 // ---- Radio audio --------------------------------------------------------
 //
 // ADR 0002: only node presence, mute and Radio TX being the system default
@@ -807,24 +1240,16 @@ function metaOf(snapshot, key) {
 }
 
 function overall(snapshot) {
-  var anyWarn = false
-  var allOk = true
-
-  for (var i = 0; i < KEYS.length; i++) {
-    var state = stateOf(snapshot, KEYS[i])
-    if (state === FAIL) return FAIL
-    if (state === WARN) anyWarn = true
-    if (state !== OK) allOk = false
-  }
-
-  if (anyWarn) return WARN
-  return allOk ? OK : UNKNOWN
+  var states = []
+  for (var i = 0; i < KEYS.length; i++) states.push(stateOf(snapshot, KEYS[i]))
+  return worstState(states)
 }
 
 function counts(snapshot) {
   var result = { ready: 0, attention: 0, blocked: 0, unknown: 0 }
   for (var i = 0; i < KEYS.length; i++) {
     var state = stateOf(snapshot, KEYS[i])
+    if (!applicable(state)) continue
     if (state === OK) result.ready++
     else if (state === WARN) result.attention++
     else if (state === FAIL) result.blocked++
@@ -833,14 +1258,22 @@ function counts(snapshot) {
   return result
 }
 
+function totalCount(counts) {
+  return counts.ready + counts.attention + counts.blocked + counts.unknown
+}
+
+// Only applicable checks reach the panel: a row that is na is not drawn at all
+// rather than drawn greyed out.
 function rows(snapshot) {
   var result = []
   for (var i = 0; i < KEYS.length; i++) {
     var key = KEYS[i]
+    var state = stateOf(snapshot, key)
+    if (!applicable(state)) continue
     result.push({
       key: key,
       label: LABELS[key],
-      state: stateOf(snapshot, key),
+      state: state,
       readout: readoutOf(snapshot, key),
       detail: detailOf(snapshot, key),
       meta: metaOf(snapshot, key)
@@ -865,26 +1298,53 @@ function verdict(state) {
   return VERDICTS[state] || VERDICTS.unknown
 }
 
-function verdictDetail(state, counts) {
-  if (state === OK) return "All three checks are green."
+// The verdict always names every declared path. With both declared, the two
+// path phrases keep the working half visible ("Host audio ready · TNC needs
+// attention"); with one declared, the path is named and the counts explain the
+// state. An undeclared-path hint rides along as text, never as a state.
+function verdictDetail(state, counts, snapshot, stationPaths, hint) {
+  var declaration = stationPaths === undefined ? STATION_PATH_DEFAULT : stationPaths
+  var hostDeclared = declares(declaration, PATH_HOST)
+  var tncDeclared = declares(declaration, PATH_TNC)
+  var suffix = !tncDeclared && text(hint) !== "" ? " · " + text(hint) : ""
+
+  if (hostDeclared && tncDeclared) {
+    if (state === OK) return "Ready for host audio and TNC" + suffix
+    var host = snapshot ? pathState(snapshot, PATH_HOST) : state
+    var tnc = snapshot ? pathState(snapshot, PATH_TNC) : state
+    return capitalizeFirst(pathPhrase(PATH_HOST, host) + " · " + pathPhrase(PATH_TNC, tnc)) + suffix
+  }
+
+  var path = tncDeclared ? PATH_TNC : PATH_HOST
+  if (state === OK) return (path === PATH_TNC ? "Ready for TNC" : "Ready for host audio") + suffix
+
+  var total = totalCount(counts)
   if (state === FAIL) {
     var attention = counts.attention > 0
       ? " · " + counts.attention + (counts.attention === 1 ? " needs attention" : " need attention")
       : ""
-    return counts.blocked + (counts.blocked === 1 ? " check failed" : " checks failed") + attention
+    return pathTitle(path) + " not ready · "
+      + counts.blocked + (counts.blocked === 1 ? " check failed" : " checks failed")
+      + attention + suffix
   }
   if (state === WARN) {
-    return counts.attention + " of 3 checks "
-      + (counts.attention === 1 ? "needs" : "need") + " attention."
+    return pathTitle(path) + ": " + counts.attention + " of " + total + " checks "
+      + (counts.attention === 1 ? "needs" : "need") + " attention" + suffix
   }
-  return "One or more checks cannot be answered yet."
+  return pathTitle(path) + " not probed yet" + suffix
 }
 
-function tooltip(snapshot) {
+function tooltip(snapshot, stationPaths, hint) {
+  var declaration = stationPaths === undefined ? STATION_PATH_DEFAULT : stationPaths
   var lines = ["Station: " + label(overall(snapshot))]
+  if (declares(declaration, PATH_HOST))
+    lines.push("Host audio: " + pathWord(pathState(snapshot, PATH_HOST)))
+  if (declares(declaration, PATH_TNC))
+    lines.push("TNC: " + pathWord(pathState(snapshot, PATH_TNC)))
   var items = rows(snapshot)
   for (var i = 0; i < items.length; i++) {
     lines.push(items[i].label + ": " + shortLabel(items[i].state) + " — " + items[i].detail)
   }
+  if (!declares(declaration, PATH_TNC) && text(hint) !== "") lines.push(text(hint))
   return lines.join("\n")
 }
