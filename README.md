@@ -357,6 +357,70 @@ shell` is the reliable way to pick up a new probe file.
 omarchy plugin remove yock.station-readiness --yes
 ```
 
+## Dependencies and permissions
+
+The widget is a passive observer: it reads station state and never changes it.
+
+### Required
+
+| Requirement | Why |
+| --- | --- |
+| Omarchy 4.x (Quickshell) | The bar, the `BarWidget` base, and the PipeWire and Bluetooth services. |
+| PipeWire | Radio audio is graded on node presence, mute state and the system default sink. |
+| systemd | `timedatectl` reports whether the clock is synchronised. |
+| BlueZ | Only for a Bluetooth TNC. A serial TNC needs nothing from it. |
+
+### Per-check packages
+
+| Check | Package | Commands | On stock Arch? |
+| --- | --- | --- | --- |
+| Time sync over NTP | `systemd` (`systemd-timesyncd`) or `chrony` | `timedatectl`, `chronyc` | `systemd` yes, `chrony` no |
+| GPS/PPS time | `gpsd` **and** `chrony` | `gpspipe`, `chronyc` | no — install both |
+| CAT control | `hamlib`, with `rigctld` already running | `rigctl`, `pgrep` | no — `pacman -S hamlib` |
+| Radio audio | `pipewire` | Quickshell service, no process | yes |
+| TNC transport | `udev`, `psmisc`, `procps-ng` | `udevadm`, `fuser`, `ps` | yes |
+
+### Commands the plugin executes
+
+Every process the widget spawns, all through `sh -c`:
+
+```
+chronyc -n tracking                     chronyc -n sources
+timedatectl timesync-status             timedatectl show -p NTPSynchronized --value
+gpspipe -w -n 8                         (bounded by timeout 2)
+pgrep -a -x rigctld                     command -v rigctld
+rigctl -m 2 -r <endpoint> f|m|t         (bounded by timeout 5)
+fuser <device>                          ps -p <pid> -o comm=
+udevadm info -q property -n <device>
+readlink <path> (or -f)                 dd if=<device> of=/dev/null count=0 iflag=nonblock
+sed, head, cat, timeout
+```
+
+`sh`, `cat`, `head`, `sed`, `dd`, `timeout` and `readlink` come from `bash`,
+`coreutils` and `sed`; `pgrep` and `ps` from `procps-ng`; `fuser` from
+`psmisc`; `udevadm` from `systemd`. All of those are dependencies of Arch's
+`base` meta package, so a stock Omarchy install already has them.
+
+### Permission boundary
+
+- Runs entirely as your user. No sudo, no polkit prompt, no setuid helper, no
+  root configuration.
+- No outbound network. The only socket the widget causes is a loopback TCP
+  connection from `rigctl` to `rigctld` at `127.0.0.1:4532`.
+- Reads `/etc/default/gpsd`, `/sys/class/tty/*/type`, the udev property database
+  and `/proc/<pid>/fd/*`. The `/proc` scan names the process holding a port; it
+  never attaches to it.
+- Reads permission bits on `/dev/tty*` but opens a serial device only when it
+  is free, then read-only and non-blocking for a zero-byte read, and closes it
+  at once. A port held by another process is never opened.
+- Never writes to the rig, the modem or the system clock; never steps the clock,
+  restarts a service or edits a system file. The only writes are to your own bar
+  configuration when you change a setting in the panel.
+- A TNC port needs read access: on Arch, `/dev/ttyACM*` and `/dev/ttyUSB*` are
+  group `uucp`, so a user outside that group sees "not readable" rather than a
+  verdict. CAT is unaffected — `rigctld` owns the device and the widget talks to
+  the daemon, not the port.
+
 ## Build a release
 
 ```bash
