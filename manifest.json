@@ -6,20 +6,18 @@
   "author": "yock",
   "license": "MIT",
   "description": "Station readiness for digital-mode operators: time sync, CAT control, radio audio and TNC transport at a glance, with a green/amber/red bar indicator.",
-  "keywords": [
-    "ham radio",
-    "amateur radio",
-    "station",
-    "cat",
-    "rigctld",
-    "hamlib",
-    "gps",
-    "chrony",
-    "audio",
-    "readiness",
+  "repository": "https://github.com/yock/omarchy-station",
+  "category": "system",
+  "tags": [
     "bar",
-    "quickshell"
+    "audio",
+    "monitoring"
   ],
+  "compatibility": {
+    "apiVersion": 1,
+    "minOmarchyVersion": "4.0.0",
+    "maxOmarchyVersionExclusive": "5.0.0"
+  },
   "kinds": [
     "bar-widget"
   ],
