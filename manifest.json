@@ -12,6 +12,7 @@
     "station",
     "cat",
     "rigctld",
+    "hamlib",
     "gps",
     "chrony",
     "audio",

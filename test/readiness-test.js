@@ -747,6 +747,17 @@ assert.equal(noRigctld.readout, "—")
 assert.equal(noRigctld.detail, "rigctld not running")
 assert.equal(noRigctld.meta, "127.0.0.1:4532")
 
+// A missing hamlib package is not a stopped daemon: rigctld cannot run because
+// it was never installed, and the package is what the operator has to add.
+const noHamlib = R.catCheck(catInput({ installed: false, rigctld: false }))
+assert.equal(noHamlib.state, R.FAIL)
+assert.equal(noHamlib.detail, "hamlib is not installed")
+assert.equal(noHamlib.meta, "install hamlib")
+
+// Installed and stopped keeps the daemon rung.
+const stoppedDaemon = R.catCheck(catInput({ installed: true, rigctld: false }))
+assert.equal(stoppedDaemon.detail, "rigctld not running")
+
 // A rig that answers is ready, whatever the device facts look like: rigctld
 // may run as another user, so its own open handle outranks our permissions.
 const catReady = R.catCheck(catInput({ device: { present: false } }))
@@ -919,6 +930,7 @@ assert.equal(R.timeCheck(R.timeFacts()).detail, "no time source")
 assert.equal(R.timeFacts().gps.pps, false)
 assert.equal(R.catCheck(R.catFacts()).state, R.FAIL)
 assert.equal(R.catCheck(R.catFacts()).detail, "rigctld not running")
+assert.equal(R.catFacts().installed, true)
 assert.equal(R.catFacts().reply.freq, 0)
 
 // The new checks aggregate with the audio one through the same helpers the bar

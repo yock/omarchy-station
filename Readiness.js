@@ -369,13 +369,14 @@ function gpsConfigFacts(value) {
 
 // ---- CAT control --------------------------------------------------------
 //
-// ADR 0003: readiness is link health. rigctld must already be running — the
-// widget never starts one and never opens the serial device — and the rig must
-// answer frequency and mode. Meter readings and PTT tests are never signals;
-// PTT state is read only.
+// ADR 0003: readiness is link health. rigctld from the hamlib package must
+// already be running; the widget never starts one and never opens the serial
+// device. The rig must answer frequency and mode. Meter readings and PTT tests
+// are never signals; PTT state is read only.
 //
 // `input` is:
 //
+//   installed   the hamlib package is present, so rigctld can run at all
 //   rigctld     something is running as rigctld
 //   queryable   the rigctl client is installed, so the link can be asked
 //   endpoint    host:port the client talks to
@@ -391,6 +392,7 @@ var CAT_ENDPOINT = "127.0.0.1:4532"
 // The neutral fact set a probe starts from, and the shape catCheck reads.
 function catFacts() {
   return {
+    installed: true,
     rigctld: false,
     queryable: true,
     endpoint: CAT_ENDPOINT,
@@ -411,6 +413,12 @@ function catCheck(input) {
   var reply = facts.reply || {}
   var device = facts.device || {}
   var endpoint = text(facts.endpoint) || CAT_ENDPOINT
+
+  // A missing hamlib package outranks every other rung: rigctld cannot run if
+  // it was never installed, and "not running" would send the operator after a
+  // daemon that is not there. The package is what they have to add.
+  if (facts.installed === false)
+    return check(FAIL, "—", "hamlib is not installed", "install hamlib")
 
   if (facts.rigctld !== true)
     return check(FAIL, "—", "rigctld not running", endpoint)

@@ -7,6 +7,11 @@ mode and PTT state are read for the readout and the meta line when the backend
 reports them. A backend without `get_mode` is not a broken station, so the check
 does not turn red over a missing mode.
 
+A link cannot exist without the `hamlib` package, so the first rung names the
+package rather than a stopped daemon: `pgrep` cannot tell "not running" from
+"never installed", and "not running" would send the operator after a daemon that
+was never there. The widget still never installs it.
+
 The widget attaches to an existing `rigctld` and never starts one. A daemon is
 where the rig model, serial speed and PTT wiring are configured, and a second
 daemon started from a bar widget would compete for the same serial port with the

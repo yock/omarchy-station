@@ -2,10 +2,10 @@ import QtQuick
 import Quickshell.Io
 import "Readiness.js" as Readiness
 
-// CAT probe: link health for an existing rigctld. ADR 0003 — the widget never
-// starts rigctld and never opens the serial device. It finds the daemon, notes
-// the device it was told to use, then asks it over TCP for frequency and mode
-// and reads PTT state when the rig reports it.
+// CAT probe: link health for an existing rigctld from the hamlib package. ADR
+// 0003 — the widget never starts rigctld and never opens the serial device. It
+// finds the daemon, notes the device it was told to use, then asks it over TCP
+// for frequency and mode and reads PTT state when the rig reports it.
 //
 // The device facts only explain a link that failed: rigctld may run as another
 // user, so its own open handle outranks this shell's permission check. Nothing
@@ -18,14 +18,10 @@ ProbedCheck {
   property string devicePid: ""
   property string endpoint: Readiness.CAT_ENDPOINT
 
+  // `catFacts()` is the exact shape catCheck reads; hand it over whole so a
+  // new fact cannot be collected and then forgotten in this field list.
   readonly property var check: root.probed
-    ? Readiness.catCheck({
-        rigctld: root.facts.rigctld,
-        queryable: root.facts.queryable,
-        endpoint: root.facts.endpoint,
-        device: root.facts.device,
-        reply: root.facts.reply
-      })
+    ? Readiness.catCheck(root.facts)
     : Readiness.notProbed()
 
   function blankFacts() { return Readiness.catFacts() }
@@ -81,11 +77,25 @@ ProbedCheck {
     stderr: StdioCollector { id: pgrepErr; waitForEnd: true }
     onExited: function(exitCode) {
       if (exitCode !== 0 || !root.applyRigctld(pgrepOut.text || root.pgrepText)) {
-        root.finish()
+        // Nothing is running. pgrep cannot say whether rigctld was never
+        // installed, so ask the shell before blaming the daemon.
+        installedProc.running = true
         return
       }
       if (root.devicePath !== "") deviceProc.running = true
       else freqProc.running = true
+    }
+  }
+
+  // pgrep exits 1 both for a daemon that is stopped and for one that was never
+  // installed. command -v tells them apart, so a missing hamlib package is
+  // named instead of sending the operator after a daemon that is not there.
+  Process {
+    id: installedProc
+    command: ["sh", "-c", "command -v rigctld >/dev/null 2>&1"]
+    onExited: function(exitCode) {
+      root.pending.installed = exitCode === 0
+      root.finish()
     }
   }
 

@@ -16,7 +16,7 @@ The plugin treats station readiness as three independent checks:
 | Check | What it answers |
 |---|---|
 | **Time sync** | Which source is disciplining the clock — GPS/PPS or NTP? If GPS is configured, how far did it get: no device, gpsd down, no fix, fix without PPS, ready but not selected? A healthy NTP fallback still counts. |
-| **CAT control** | Is `rigctld` reachable? What frequency/mode is the rig on? Is the serial device present and permitted? |
+| **CAT control** | Is `hamlib` installed and `rigctld` reachable? What frequency/mode is the rig on? Is the serial device present and permitted? |
 | **Radio audio** | Are the assigned Radio RX and Radio TX nodes present on PipeWire and unmuted, and is Radio TX kept off the system default output? |
 
 The overall state is the worst of the three:
@@ -56,7 +56,7 @@ omarchy-station/
 ├── BarWidget.qml          # station glyph, readiness dot, poll timer, IPC
 ├── ProbedCheck.qml        # shared poll state machine for the time and CAT checks
 ├── TimeProbe.qml          # chrony/timesyncd source health and gpsd facts
-├── CatProbe.qml           # rigctld discovery, serial facts, f/m/t queries
+├── CatProbe.qml           # hamlib/rigctld discovery, serial facts, f/m/t queries
 ├── AudioProbe.qml         # PipeWire presence, mute and default-output facts
 ├── StationGlyph.qml       # the drawn mast glyph
 ├── Panel.qml              # expanded readiness panel and assignment picker
@@ -193,16 +193,26 @@ If the GPS is only used for position, `gpsd` alone is enough: the check reports
 ## CAT control
 
 The widget attaches to an existing `rigctld`; it never starts one and never
-opens the serial device. `pgrep -a -x rigctld` finds the daemon, its own command
-line says which device and TCP port it was given, and `rigctl -m 2 -r
-127.0.0.1:<port> f` (then `m`, then `t`) reads frequency, mode and PTT state. All
-of it is read-only: nothing is keyed, and no meter reading is requested. See ADR
-0003.
+opens the serial device. `rigctld` and `rigctl` both come from the `hamlib`
+package:
+
+```bash
+omarchy pkg add hamlib
+```
+
+`pgrep -a -x rigctld` finds the daemon, its own command line says which device
+and TCP port it was given, and `rigctl -m 2 -r 127.0.0.1:<port> f` (then `m`,
+then `t`) reads frequency, mode and PTT state. All of it is read-only: nothing
+is keyed, and no meter reading is requested. See ADR 0003.
 
 A reply is what proves the link. When the reply fails, the most specific device
 fact explains it: serial device missing, permission denied, or the port held by
-another program. A missing `rigctl` client is reported as unknown rather than
-faulted, because nothing is known to be broken.
+another program. `pgrep` exits the same way for a stopped daemon and for a
+package that was never installed, so the probe asks `command -v rigctld` before
+it blames the daemon: a missing package reads `hamlib is not installed` with an
+install hint, and a package that is present but idle reads `rigctld not
+running`. Both fail the link. A missing `rigctl` client while `rigctld` runs is
+reported as unknown rather than faulted, because nothing is known to be broken.
 
 ## Radio audio assignments
 
