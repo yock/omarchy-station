@@ -282,9 +282,10 @@ shell` is the reliable way to pick up a new probe file. Remove it with
 
 ## Next
 
-1. **Radio audio probe for a hardware TNC** — stations whose audio path lives
-   inside the modem have no host nodes at all, so the audio check needs a
-   separate design (#4).
+1. **TNC stations** — the model is settled: a station declares its paths and a
+   modem path is graded on its transport, never on KISS (ADR 0004, ADR 0005).
+   The implementation is #4. The panel and settings still describe three checks
+   until it lands.
 2. **Top bar icon** — the station glyph and the status dot are settled; the
    compact icon treatment is tracked separately (#2).
 
