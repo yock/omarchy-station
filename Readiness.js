@@ -887,23 +887,32 @@ function tncSerialFacts(value, path) {
 // A candidate name identifies a chip family or a product string, never a
 // modem: a Mobilinkd product string suggests a TNC, and so does any name
 // carrying "TNC", but neither proves KISS. Recognised names lead, then paired
-// Bluetooth devices, then the rest. Every reason says "suggests rather than
-// identifies".
+// Bluetooth devices, then the rest. A row's reason names what was recognised,
+// never a modem: the caveat that no transport proves KISS belongs in ADR 0005
+// and the README, not in text that appears under every row.
 
 var TNC_TIER_RECOGNISED = 0
 var TNC_TIER_PAIRED = 1
 var TNC_TIER_OTHER = 2
 
 var TNC_RECOGNISED_NAMES = ["mobilinkd", "tnc"]
+var TNC_RECOGNISED_LABELS = { mobilinkd: "Mobilinkd", tnc: "TNC" }
 
-var TNC_RECOGNISED_REASON = "recognised modem name — suggests rather than identifies"
-var TNC_PAIRED_REASON = "paired Bluetooth device — suggests rather than identifies"
+var TNC_PAIRED_REASON = "paired Bluetooth device"
 
-function tncRecognisedName(value) {
+// The token a candidate name matched, or "" when nothing matched. The row's
+// reason names this token, so it says which product string was recognised
+// rather than asserting the device is a modem.
+function tncRecognisedMatch(value) {
   var lowered = text(value).toLowerCase()
   for (var i = 0; i < TNC_RECOGNISED_NAMES.length; i++)
-    if (lowered.indexOf(TNC_RECOGNISED_NAMES[i]) !== -1) return true
-  return false
+    if (lowered.indexOf(TNC_RECOGNISED_NAMES[i]) !== -1)
+      return TNC_RECOGNISED_LABELS[TNC_RECOGNISED_NAMES[i]]
+  return ""
+}
+
+function tncRecognisedName(value) {
+  return tncRecognisedMatch(value) !== ""
 }
 
 function tncPrettyModel(value) {
@@ -922,15 +931,14 @@ function tncSerialCandidates(value) {
     if (path === "") continue
     var model = tncPrettyModel(split < 0 ? "" : rest.slice(split + 1))
     var label = model === "" ? path : model
-    var recognised = tncRecognisedName(label) || tncRecognisedName(path)
+    var match = tncRecognisedMatch(label) || tncRecognisedMatch(path)
     result.push({
       kind: "serial",
       value: path,
       label: label,
       description: model === "" ? "" : path,
-      reason: recognised ? TNC_RECOGNISED_REASON
-        : tncSerialKind(path) + " — suggests rather than identifies",
-      tier: recognised ? TNC_TIER_RECOGNISED : TNC_TIER_OTHER
+      reason: match === "" ? tncSerialKind(path) : "name matches " + match,
+      tier: match === "" ? TNC_TIER_OTHER : TNC_TIER_RECOGNISED
     })
   }
   return result
@@ -948,14 +956,14 @@ function tncBluetoothCandidates(devices) {
     var address = text(device.address).trim()
     if (address === "") continue
     var name = text(device.name) || text(device.deviceName) || address
-    var recognised = tncRecognisedName(name)
+    var match = tncRecognisedMatch(name)
     result.push({
       kind: "bluetooth",
       value: address,
       label: name,
       description: address,
-      reason: recognised ? TNC_RECOGNISED_REASON : TNC_PAIRED_REASON,
-      tier: recognised ? TNC_TIER_RECOGNISED : TNC_TIER_PAIRED,
+      reason: match === "" ? TNC_PAIRED_REASON : "name matches " + match,
+      tier: match === "" ? TNC_TIER_PAIRED : TNC_TIER_RECOGNISED,
       paired: true,
       connected: device.connected === true
     })
@@ -1004,8 +1012,9 @@ function sameTncTransport(left, right) {
   return first === second
 }
 
-// The picker's rows: a header, one row per candidate carrying the reason the
-// name only suggests a modem, and a Clear row when something is assigned.
+// The picker's rows: a header, one row per candidate carrying what was
+// recognised — a port type or a product-name match — and a Clear row when
+// something is assigned.
 function tncTransportRows(candidates, current) {
   var list = candidates && candidates.length ? candidates : []
   var rows = [{ kind: "header", selectable: false, text: "TNC transport" }]

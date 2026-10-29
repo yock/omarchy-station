@@ -259,10 +259,12 @@ Bluetooth is graded at paired and connected. See ADR 0005.
 No transport proves KISS: the check never claims it on the panel. Click the TNC
 column or press `t` to open the inline transport picker. It lists serial devices
 and paired Bluetooth devices, recognised modem names first, then paired but
-unrecognised, then the rest; every row says its name suggests rather than
-identifies. When a Host-audio station has a recognised modem on a serial port,
-the verdict carries one line of text — "KISS modem on `/dev/ttyACM0` — declare a
-TNC path" — never a state.
+unrecognised, then the rest; a row's small print names what the station knows
+about it — the port type for a serial device, the matched product name for a
+recognised one, or that a Bluetooth device is paired — and never calls the
+device a modem. When a Host-audio station has a recognised modem on a serial
+port, the verdict carries one line of text — "KISS modem on `/dev/ttyACM0` —
+declare a TNC path" — never a state.
 
 ## Radio audio assignments
 

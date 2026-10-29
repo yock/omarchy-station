@@ -1379,8 +1379,8 @@ assert.equal(emptySerialReport.holderPid, 0)
 // ---- TNC transport: candidate ranking ----------------------------------
 //
 // The picker lists serial devices and paired Bluetooth devices. A name
-// identifies a chip family or a product string, never a modem, so every row
-// says it suggests rather than identifies. Recognised modem names lead, then
+// identifies a chip family or a product string, never a modem, so each row's
+// reason names only what was recognised. Recognised modem names lead, then
 // paired Bluetooth devices, then everything else.
 
 const TNC_CANDIDATES = R.tncCandidates([
@@ -1402,16 +1402,27 @@ assert.equal(
   [R.TNC_TIER_RECOGNISED, R.TNC_TIER_RECOGNISED, R.TNC_TIER_PAIRED,
     R.TNC_TIER_OTHER, R.TNC_TIER_OTHER].join("|")
 )
-for (const candidate of TNC_CANDIDATES)
-  assert.match(candidate.reason, /suggests rather than identifies/)
+// The row's reason is UI text: it names the port type, the matched product
+// name, or the pairing state — and never repeats the domain caveat that the
+// list is only a hint, or calls the device a modem.
+const TNC_REASON = /^(USB CDC|USB serial|onboard serial|serial|paired Bluetooth device|name matches (Mobilinkd|TNC))$/
+assert.ok(TNC_CANDIDATES.every(function(candidate) {
+  return TNC_REASON.test(candidate.reason)
+}))
 
 const recognisedSerial = TNC_CANDIDATES[1]
 assert.equal(recognisedSerial.kind, "serial")
 assert.equal(recognisedSerial.value, "/dev/ttyACM0")
 assert.equal(recognisedSerial.description, "/dev/ttyACM0")
-assert.equal(recognisedSerial.reason, "recognised modem name — suggests rather than identifies")
-assert.equal(TNC_CANDIDATES[2].reason, "paired Bluetooth device — suggests rather than identifies")
-assert.equal(TNC_CANDIDATES[3].reason, "onboard serial — suggests rather than identifies")
+assert.equal(recognisedSerial.reason, "name matches Mobilinkd")
+assert.equal(TNC_CANDIDATES[2].reason, "paired Bluetooth device")
+assert.equal(TNC_CANDIDATES[3].reason, "onboard serial")
+
+// The other recognised token names itself: a bare "TNC" model does not become
+// a Mobilinkd match.
+const tncNamedSerial = R.tncCandidates("serial|/dev/ttyUSB9|Some_TNC_Board", [])
+assert.equal(tncNamedSerial[0].reason, "name matches TNC")
+assert.equal(tncNamedSerial[0].tier, R.TNC_TIER_RECOGNISED)
 
 // Unpaired Bluetooth devices are not transports the station can use yet.
 assert.ok(TNC_CANDIDATES.every(function(candidate) {
