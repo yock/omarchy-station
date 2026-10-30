@@ -1,7 +1,10 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
+import "." as Station
 import "Readiness.js" as Readiness
 
 // Station readiness in the bar: one station glyph plus a small status dot.
@@ -63,8 +66,8 @@ BarWidget {
     // Applied locally first so the check changes on the click itself. Without
     // a writable bar entry the choice lives only for this session.
     root.settings = entry
-    if (root.bar && root.bar.shell && typeof root.bar.shell.updateEntryInline === "function")
-      root.bar.shell.updateEntryInline(root.moduleName, entry)
+    if (root.barApi && root.barApi.shell && typeof root.barApi.shell.updateEntryInline === "function")
+      root.barApi.shell.updateEntryInline(root.moduleName, entry)
 
     // The facts collected under one GPS mode are not the facts the next mode
     // asks for: forget the old answer, then poll rather than wait out
@@ -117,8 +120,17 @@ BarWidget {
   // from the ball, still inside the bar's 21px status slot.
   readonly property int glyphSize: 18
 
+  // The host hands an installed widget a qs.Ui.PluginBarApi, not the raw Bar.
+  // Typing it here checks the members this widget actually uses; a first-party
+  // host would fail the cast and fall back to the guarded defaults below.
+  readonly property PluginBarApi barApi: root.bar as PluginBarApi
+
+  // One declared interface for the loaded panel, so its members are typed
+  // instead of duck-typed through Loader.item.
+  readonly property Station.Panel panelItem: panelLoader.item as Station.Panel
+
   function injectPanel() {
-    var target = panelLoader.item
+    var target = root.panelItem
     if (!target) return
     if ("bar" in target) target.bar = root.bar
     if ("settings" in target) target.settings = root.settings
@@ -134,7 +146,7 @@ BarWidget {
     timeProbe.refresh()
     catProbe.refresh()
     tncProbe.refresh()
-    if (panelLoader.item && panelLoader.item.refresh) panelLoader.item.refresh()
+    if (root.panelItem && root.panelItem.refresh) root.panelItem.refresh()
   }
 
   // The bar is the only place the poll lives: the panel renders the snapshot
@@ -150,24 +162,24 @@ BarWidget {
 
   // Shape contract for shell.summon/hide/toggle routing. The bar tracks the
   // widget mounted in its slot, so these live here and forward to the panel.
-  readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
+  readonly property bool opened: root.panelItem ? root.panelItem.opened === true : false
 
   function open() {
-    if (panelLoader.item) panelLoader.item.open()
+    if (root.panelItem) root.panelItem.open()
   }
 
   function close() {
-    if (panelLoader.item) panelLoader.item.close()
+    if (root.panelItem) root.panelItem.close()
   }
 
   function togglePanel() {
-    if (panelLoader.item) panelLoader.item.toggle()
+    if (root.panelItem) root.panelItem.toggle()
   }
 
-  readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
+  readonly property bool popoutSwitchClosing: root.panelItem ? root.panelItem.popoutSwitchClosing === true : false
 
   function closeForPopoutSwitch() {
-    if (panelLoader.item) panelLoader.item.closeForPopoutSwitch()
+    if (root.panelItem) root.panelItem.closeForPopoutSwitch()
   }
 
   implicitWidth: button.implicitWidth
@@ -219,7 +231,7 @@ BarWidget {
     radius: width / 2
     color: root.overallColor
     border.width: 1
-    border.color: root.bar ? root.bar.background : Color.background
+    border.color: root.barApi ? root.barApi.background : Color.background
     anchors.right: button.right
     anchors.top: button.top
     anchors.rightMargin: Style.space(1)

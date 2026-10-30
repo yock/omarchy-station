@@ -320,6 +320,15 @@ ln -s /usr/share/omarchy/shell "$tmp/qs"
 rm -rf "$tmp"
 ```
 
+The command is expected to report only `missing-property` warnings on
+`Style.font.*`, `Style.spacing.*` and `Style.bar.*` (14 on this tree). They are a
+shell-side typing gap, not a mistake here: `Style.qml` declares `font`, `spacing`
+and `bar` as `readonly property QtObject`, so qmllint cannot see their members,
+and the shell's own `Ui/PanelHero.qml` reports the same warnings. Any other
+warning, or any `Info:` line, is a regression. Naming those token objects in the
+shell (an inline component type such as `component FontTokens: QtObject { ... }`)
+would clear them.
+
 ## Install
 
 ### From the registry

@@ -39,6 +39,9 @@ Panel {
   property string pickerKind: ""
   property int pickerIndex: 0
 
+  // ScrollView.contentItem is the Flickable that scrolls the picker.
+  readonly property Flickable pickerFlickable: pickerScroll.contentItem
+
   readonly property var barIdentity: hostWidget || root
   readonly property string overallState: Readiness.overall(readiness)
   readonly property var rows: Readiness.rows(readiness)
@@ -291,7 +294,7 @@ Panel {
   // the keyboard cursor inside the visible part of it.
   function ensurePickerVisible(item) {
     if (!item || !pickerScroll) return
-    var flick = pickerScroll.contentItem
+    var flick = root.pickerFlickable
     if (!flick || flick.contentY === undefined) return
     var margin = Style.space(6)
     var maxY = Math.max(0, (flick.contentHeight || 0) - flick.height)
@@ -307,7 +310,7 @@ Panel {
 
   function resetPickerScroll() {
     if (!pickerScroll) return
-    var flick = pickerScroll.contentItem
+    var flick = root.pickerFlickable
     if (flick && flick.contentY !== undefined) flick.contentY = 0
   }
 
@@ -327,7 +330,7 @@ Panel {
     centerOnBar: false
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(520))
-    contentHeight: panel.fittedContentHeight(content.implicitHeight)
+    contentHeight: panel.fittedContentHeight(panelContent.implicitHeight)
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -349,7 +352,7 @@ Panel {
       }
 
       Column {
-        id: content
+        id: panelContent
         width: parent.width
         spacing: Style.space(10)
 
