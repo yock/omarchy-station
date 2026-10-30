@@ -4,7 +4,6 @@ import QtQuick
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
-import "." as Station
 import "Readiness.js" as Readiness
 
 // Station readiness in the bar: one station glyph plus a small status dot.
@@ -125,9 +124,11 @@ BarWidget {
   // host would fail the cast and fall back to the guarded defaults below.
   readonly property PluginBarApi barApi: root.bar as PluginBarApi
 
-  // One declared interface for the loaded panel, so its members are typed
-  // instead of duck-typed through Loader.item.
-  readonly property Station.Panel panelItem: panelLoader.item as Station.Panel
+  // The panel is loaded by URL, so its runtime type has a different identity
+  // from the sibling type a directory import names: casting to Station.Panel
+  // yields null and every open()/toggle() silently becomes a no-op. Keep this
+  // untyped so the loaded item is forwarded to as-is.
+  readonly property var panelItem: panelLoader.item
 
   function injectPanel() {
     var target = root.panelItem
