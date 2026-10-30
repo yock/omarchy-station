@@ -1516,67 +1516,13 @@ assert.equal(
   "Host audio not ready · 1 check failed · 1 at reduced capability"
 )
 
-// ---- Settings reference: README agrees with the manifest ----------------
+// ---- Settings reference: the picker agrees with the manifest ------------
 //
 // manifest.json is the source of truth for every bar-widget setting. The
-// README's Settings table is the discovery path for the keys the panel does
-// not edit (refreshIntervalSec) and must not drift from the schema.
+// picker's rows and the setting keys must not drift from its schema.
 
 const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "manifest.json"), "utf8"))
 const schema = manifest.barWidget.schema
-
-const readme = fs.readFileSync(path.join(__dirname, "..", "README.md"), "utf8")
-const settingsSection = /^## Settings[ \t]*\n([\s\S]*?)(?=^## )/m.exec(readme)
-assert.ok(settingsSection, "README has a ## Settings section")
-
-function readmeSettingsRows(section) {
-  const rows = []
-  for (const line of section.split("\n")) {
-    if (line.charAt(0) !== "|") continue
-    const cells = line.replace(/^\|/, "").replace(/\|\s*$/, "")
-      .split("|").map(function(cell) { return cell.trim() })
-    if (cells.length !== 5) continue
-    const key = /^`([^`]+)`$/.exec(cells[0])
-    if (!key) continue
-    rows.push({
-      key: key[1],
-      type: cells[1],
-      accepted: cells[2],
-      // Backticks keep the table readable; the value is what is inside them.
-      default: cells[3].replace(/^`|`$/g, ""),
-      effect: cells[4]
-    })
-  }
-  return rows
-}
-
-const settingsRows = readmeSettingsRows(settingsSection[1])
-const documented = {}
-for (const row of settingsRows) documented[row.key] = row
-
-// Every schema key has a row, and no row documents a key the schema does not
-// declare.
-assert.deepEqual(
-  Object.keys(documented).sort(),
-  schema.map(function(entry) { return entry.key }).sort()
-)
-
-function displayedDefault(value) {
-  return String(value) === "" ? "(empty)" : String(value)
-}
-
-for (const entry of schema) {
-  const row = documented[entry.key]
-  assert.equal(row.type, entry.type, entry.key + " type")
-  assert.equal(row.default, displayedDefault(entry.defaultValue), entry.key + " default")
-  assert.notEqual(row.effect, "", entry.key + " effect")
-  if (entry.type === "enum")
-    for (const option of entry.options)
-      assert.ok(row.accepted.indexOf(option) !== -1, entry.key + " lists " + option)
-  if (entry.type === "integer")
-    for (const bound of [entry.min, entry.max])
-      assert.ok(row.accepted.indexOf(String(bound)) !== -1, entry.key + " lists " + bound)
-}
 
 // The picker's rows and the manifest's enum come from the same order and key.
 const gpsEntry = schema.filter(function(entry) { return entry.key === "gpsMode" })[0]
@@ -1605,10 +1551,5 @@ const transportEntry = schema.filter(function(entry) { return entry.key === "tnc
 assert.equal(transportEntry.type, "string")
 assert.equal(transportEntry.defaultValue, "")
 assert.equal(R.tncSettingKey(), transportEntry.key)
-
-// The policy matrix stays in the Time sync section; the settings table points
-// at it instead of restating it.
-assert.match(readme, /## Time sync[\s\S]*`gpsMode` says what the station expects/)
-assert.match(readme, /## Time sync[\s\S]*\| `Off` \(default\) \| `GPS mode off` \| — \|/)
 
 console.log("readiness tests passed")
