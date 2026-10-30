@@ -1,0 +1,83 @@
+name: CI
+
+# Every push and pull request proves the readiness tests still pass and the
+# manifest is one the registry will accept. Local instructions in README.md run
+# the same commands.
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+# A push that supersedes an older run on the same ref should not queue behind
+# it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests and manifest validation
+    runs-on: ubuntu-latest
+    container:
+      # Pinned by digest so the tag cannot move under us. The packages pacman
+      # installs still come from current mirrors, and bumping this digest is a
+      # visible workflow edit.
+      image: archlinux@sha256:e82623936fa1a69700b48e98b058df6eaab18b737c27473a7234a40fdecb9413
+    steps:
+      # nodejs comes first because actions/checkout is a JavaScript action that
+      # runs inside this container. git is needed by both checkouts, jq by the
+      # validator and the release script. No npm packages and no Node version
+      # manager: the distro's node is the one that runs the tests.
+      #
+      # -Syu, not -Sy: on a rolling release, installing into an unupgraded base
+      # image is the partial upgrade Arch tells you not to do.
+      - name: Install git, jq and Node.js from Arch packages
+        run: pacman -Syu --noconfirm --needed git jq nodejs
+
+      - name: Check out this repository
+        uses: actions/checkout@v4
+
+      # The real validator, not a reimplementation. Its bin goes on PATH so the
+      # direct call and the release script's optional validation of the
+      # extracted tarball both resolve the same omarchy. The ref stays explicit
+      # and visible here so which validator CI trusts is a deliberate choice,
+      # not whatever the default branch happens to be.
+      #
+      # actions/checkout only writes under the workspace, and Omarchy's own
+      # symlinks would then sit inside the plugin folder the validator scans.
+      # Check out into a dot-directory the release allowlist never includes,
+      # then move it out of the working tree before anything validates.
+      - name: Check out the Omarchy validator
+        uses: actions/checkout@v4
+        with:
+          repository: omacom/omarchy
+          ref: quattro
+          path: .omarchy
+          fetch-depth: 1
+
+      - name: Move Omarchy out of the plugin folder
+        run: mv "$GITHUB_WORKSPACE/.omarchy" /tmp/omarchy
+
+      # The container runs as root, so git refuses a checkout it considers owned
+      # by someone else unless it is marked safe.
+      - name: Trust the checkouts and put Omarchy on PATH
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory /tmp/omarchy
+          echo "/tmp/omarchy/bin" >> "$GITHUB_PATH"
+
+      - name: Validate the manifest
+        run: omarchy plugin validate .
+
+      - name: Run the readiness tests
+        run: node test/readiness-test.js
+
+      # Build outside the working tree so nothing the job produces can leak into
+      # the plugin. With omarchy on PATH the script also validates the extracted
+      # tarball, which covers the tarball shape: manifest.json at the root and
+      # nothing outside the runtime allowlist.
+      - name: Build and verify the release tarball
+        run: scripts/build-release.sh "$RUNNER_TEMP/dist"

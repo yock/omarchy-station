@@ -305,6 +305,11 @@ omarchy plugin validate .
 node test/readiness-test.js
 ```
 
+CI (`.github/workflows/ci.yml`) runs those same two commands on every push and
+pull request, in an Arch container with the real `omarchy plugin validate`
+checked out from the `quattro` branch, and then builds the release tarball
+below into a scratch directory and validates what came out.
+
 QML lint (Qt 6):
 
 ```bash
