@@ -28,14 +28,19 @@ it, the counts exclude it, and the panel never draws it. The overall state is
 the worst of the applicable checks:
 
 - **Green** — every applicable check ready
-- **Amber** — at least one applicable check needs attention, none failed
+- **Amber** — at least one applicable check is at reduced capability, none failed
 - **Red** — at least one applicable check failed
 - **Grey** — not probed yet / incomplete data
 
 A station declaring both paths is green only when both are. The verdict names
-each declared path — "Host audio ready · TNC needs attention" — so a working
+each declared path — "Host audio ready · TNC reduced capability" — so a working
 half stays visible. The dot is intentionally always visible, and grey is an
 honest "cannot answer yet" state rather than a fake green.
+
+A station with no CAT link is a real station: a manual-dial operator with a
+working audio chain can work every digital mode, tuning by hand. CAT control is
+therefore graded as reduced capability rather than a fault, so such a station
+settles at amber instead of never reaching green. See ADR 0006.
 
 ## Presentation
 
@@ -226,9 +231,10 @@ fact explains it: serial device missing, permission denied, or the port held by
 another program. `pgrep` exits the same way for a stopped daemon and for a
 package that was never installed, so the probe asks `command -v rigctld` before
 it blames the daemon: a missing package reads `no hamlib` with an install hint,
-and a package that is present but idle reads `rigctld down`. Both fail the
-link. A missing `rigctl` client while `rigctld` runs is reported as unknown
-rather than faulted, because nothing is known to be broken.
+and a package that is present but idle reads `rigctld down`. Both are reduced
+capability, never a fault: a manual-dial station works every digital mode
+without a CAT link. A missing `rigctl` client while `rigctld` runs is reported
+as unknown, because nothing is known to be broken. See ADR 0006.
 
 ## TNC transport
 
@@ -443,9 +449,7 @@ automatically; any other runtime file has to be added to the list.
 1. **Bluetooth bridging** — BLE GATT and SPP bridging need an `rfcomm` binding
    the widget must not install, so they belong in their own design; the TNC
    check stops at paired and connected.
-2. **Host-audio station with no CAT** — a real station, and a separate design
-   (ADR 0004).
-3. **Top bar icon** — the station glyph and the status dot are settled; the
+2. **Top bar icon** — the station glyph and the status dot are settled; the
    compact icon treatment is tracked separately (#2).
 
 ## Safety

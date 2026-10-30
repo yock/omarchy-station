@@ -16,8 +16,10 @@ declares every path it expects, so having both is two paths rather than a third
 kind of station. _Avoid_: mode, profile, station class.
 
 **Host-audio path**:
-The station path where the host carries the audio: CAT control plus a Radio RX
-and Radio TX role. _Avoid_: soundcard mode, audio setup.
+The station path where the host carries the audio: a Radio RX and Radio TX role,
+with CAT control as the convenience that comes with it. A station with no CAT
+link is still this path and still works a digital mode, tuning by hand.
+_Avoid_: soundcard mode, audio setup.
 
 **TNC path**:
 The station path where a modem carries the audio and keys the rig itself, so no
@@ -31,6 +33,12 @@ _Avoid_: TNC port, modem device.
 Whether the station can work a digital mode right now, expressed as the worst of
 the checks its declared station paths make applicable. _Avoid_: health, status,
 green.
+
+**Reduced capability**:
+A state where the station can work a digital mode but not as fully as a
+completely equipped one: no CAT link, a muted node, an output that puts other
+sounds on air. It is never a fault, and the dot stays amber. The panel names
+what is reduced. _Avoid_: warning, caution, degraded, partially ready.
 
 **Check**:
 One of the independent readiness questions: time sync, CAT control, radio audio,
@@ -74,9 +82,9 @@ status.
 
 **GPS mode**:
 The station's setting for whether GPS timing is expected: `Off` (no GPS, NTP is
-enough), `Optional` (GPS configured, so losing it warns but a fix without PPS or
-an unselected fix stays green) or `Required` (all three warn). _Avoid_: GPS
-enabled, GPS strictness.
+enough), `Optional` (GPS configured, so losing it is reduced capability but a
+fix without PPS or an unselected fix stays green) or `Required` (all three are
+reduced capability). _Avoid_: GPS enabled, GPS strictness.
 
 **Offset**:
 The residual error between the host clock and a time source it already trusts.
@@ -142,5 +150,5 @@ a readiness signal. _Avoid_: asleep, powered down, lost node.
 
 **On-air output**:
 The system default output being Radio TX, so unrelated sounds are transmitted.
-A warning, never a failure: the station still works a digital mode. _Avoid_:
-default sink, routing problem.
+Reduced capability, never a fault: the station still works a digital mode.
+_Avoid_: default sink, routing problem.

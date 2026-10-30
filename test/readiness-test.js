@@ -56,10 +56,10 @@ const oneWarning = {
   tnc: R.notApplicable()
 }
 assert.equal(R.overall(oneWarning), R.WARN)
-assert.equal(R.verdict(R.WARN), "Needs attention")
+assert.equal(R.verdict(R.WARN), "Ready, reduced capability")
 assert.equal(
   R.verdictDetail(R.WARN, R.counts(oneWarning), oneWarning, "Host audio"),
-  "Host audio: 1 of 3 checks needs attention"
+  "Host audio: 1 of 3 checks at reduced capability"
 )
 
 const oneFailure = {
@@ -72,7 +72,7 @@ assert.equal(R.overall(oneFailure), R.FAIL)
 assert.equal(R.verdict(R.FAIL), "Not ready")
 assert.equal(
   R.verdictDetail(R.FAIL, R.counts(oneFailure), oneFailure, "Host audio"),
-  "Host audio not ready · 1 check failed · 1 needs attention"
+  "Host audio not ready · 1 check failed · 1 at reduced capability"
 )
 assert.match(R.tooltip(oneFailure), /Station: Not ready/)
 assert.match(R.tooltip(oneFailure), /CAT control: Fault/)
@@ -171,7 +171,7 @@ const bothDegraded = stationWith({
 assert.equal(R.overall(bothDegraded), R.WARN)
 assert.equal(
   R.verdictDetail(R.WARN, R.counts(bothDegraded), bothDegraded, "Both"),
-  "Host audio ready · TNC needs attention"
+  "Host audio ready · TNC reduced capability"
 )
 
 const tncFault = stationWith({
@@ -198,7 +198,7 @@ assert.equal(
     audio: R.notApplicable(),
     tnc: R.check(R.WARN, "/dev/ttyS0", "onboard port", "onboard serial")
   }), "TNC"),
-  "TNC: 1 of 2 checks needs attention"
+  "TNC: 1 of 2 checks at reduced capability"
 )
 
 // A snapshot with every check na is not a green station, and it draws no rows.
@@ -224,7 +224,7 @@ for (const snapshot of [hostOnly, tncOnly, bothReady, bothDegraded, nothingAppli
 assert.match(R.tooltip(tncOnly, "TNC"), /TNC: ready/)
 assert.doesNotMatch(R.tooltip(tncOnly, "TNC"), /Host audio:/)
 assert.match(R.tooltip(bothDegraded, "Both"), /Host audio: ready/)
-assert.match(R.tooltip(bothDegraded, "Both"), /TNC: needs attention/)
+assert.match(R.tooltip(bothDegraded, "Both"), /TNC: reduced capability/)
 
 // Evidence of an undeclared path is one line of verdict text, never a state.
 const undeclaredHint = "KISS modem on `/dev/ttyACM0` — declare a TNC path"
@@ -537,8 +537,8 @@ assert.equal(R.gpsModeSettingKey(), "gpsMode")
 const gpsOptions = R.gpsModeRows("Off")
 assert.equal(gpsOptions.map(function(o) { return o.value }).join("|"), "Off|Optional|Required")
 assert.equal(gpsOptions[0].description, "NTP is enough")
-assert.equal(gpsOptions[1].description, "warn when GPS is lost")
-assert.equal(gpsOptions[2].description, "warn when GPS is lost, has no PPS, or is not selected")
+assert.equal(gpsOptions[1].description, "reduced capability when GPS is lost")
+assert.equal(gpsOptions[2].description, "reduced capability when GPS is lost, has no PPS, or is not selected")
 
 // The current value is marked, and the cursor starts on that row.
 const optionalRows = R.gpsModeRows("Optional")
@@ -546,7 +546,7 @@ assert.equal(optionalRows.length, 3)
 assert.equal(optionalRows[0].assigned, false)
 assert.equal(optionalRows[1].assigned, true)
 assert.equal(optionalRows[1].label, "Optional")
-assert.equal(optionalRows[1].description, "warn when GPS is lost")
+assert.equal(optionalRows[1].description, "reduced capability when GPS is lost")
 assert.equal(R.gpsModeCursor("Optional"), 1)
 assert.equal(R.gpsModeCursor("OFF"), 0)
 
@@ -930,9 +930,10 @@ assert.equal(R.gpsConfigFacts("/dev/ttyUSB0\n").missing, true)
 // ---- CAT control: link health, not telemetry (ADR 0003) ----------------
 //
 // `catCheck` is the seam: the probe resolves whether rigctld is up, what
-// device it opened and what the rig answered. The ladder owns the failure
-// order and the wording. Frequency and mode are read; SWR, ALC, forward power
-// and PTT tests never reach it.
+// device it opened and what the rig answered. The ladder owns the rung order
+// and the wording; ADR 0006 grades every failed rung as reduced capability.
+// Frequency and mode are read; SWR, ALC, forward power and PTT tests never
+// reach it.
 
 function catInput(overrides) {
   const base = R.catFacts()
@@ -948,7 +949,7 @@ function catInput(overrides) {
 
 // No rigctld: the link cannot exist, and the endpoint says where we looked.
 const noRigctld = R.catCheck(catInput({ rigctld: false }))
-assert.equal(noRigctld.state, R.FAIL)
+assert.equal(noRigctld.state, R.WARN)
 assert.equal(noRigctld.readout, "—")
 assert.equal(noRigctld.detail, "rigctld down")
 assert.equal(noRigctld.meta, "127.0.0.1:4532")
@@ -956,7 +957,7 @@ assert.equal(noRigctld.meta, "127.0.0.1:4532")
 // A missing hamlib package is not a stopped daemon: rigctld cannot run because
 // it was never installed, and the package is what the operator has to add.
 const noHamlib = R.catCheck(catInput({ installed: false, rigctld: false }))
-assert.equal(noHamlib.state, R.FAIL)
+assert.equal(noHamlib.state, R.WARN)
 assert.equal(noHamlib.detail, "no hamlib")
 assert.equal(noHamlib.meta, "install hamlib")
 
@@ -994,14 +995,14 @@ const deviceMissing = R.catCheck(catInput({
   reply: { freq: 0 },
   device: { present: false }
 }))
-assert.equal(deviceMissing.state, R.FAIL)
+assert.equal(deviceMissing.state, R.WARN)
 assert.equal(deviceMissing.detail, "missing /dev/ttyUSB0")
 
 const deviceDenied = R.catCheck(catInput({
   reply: { freq: 0 },
   device: { present: true, access: false, held: false }
 }))
-assert.equal(deviceDenied.state, R.FAIL)
+assert.equal(deviceDenied.state, R.WARN)
 assert.equal(deviceDenied.detail, "permission denied")
 assert.match(deviceDenied.meta, /dialout/)
 
@@ -1009,7 +1010,7 @@ const deviceBusy = R.catCheck(catInput({
   reply: { freq: 0 },
   device: { present: true, access: true, held: false, busy: true }
 }))
-assert.equal(deviceBusy.state, R.FAIL)
+assert.equal(deviceBusy.state, R.WARN)
 assert.equal(deviceBusy.detail, "in use: /dev/ttyUSB0")
 assert.match(deviceBusy.meta, /another program/)
 
@@ -1019,14 +1020,14 @@ const noReply = R.catCheck(catInput({
   reply: { freq: 0, mode: "", ptt: -1, error: "Communication timed out" },
   device: { present: true, access: false, held: true, busy: true }
 }))
-assert.equal(noReply.state, R.FAIL)
+assert.equal(noReply.state, R.WARN)
 assert.equal(noReply.detail, "no rig reply")
 assert.equal(noReply.meta, "Communication timed out")
 
 // A rig that is reached but reports no frequency has not answered the
 // question the check asks.
 const noFrequency = R.catCheck(catInput({ reply: { freq: 0, mode: "USB" } }))
-assert.equal(noFrequency.state, R.FAIL)
+assert.equal(noFrequency.state, R.WARN)
 assert.equal(noFrequency.detail, "no rig reply")
 
 // rigctld started without -r (a network or config-file rig): no device rung
@@ -1035,7 +1036,7 @@ const noDeviceKnown = R.catCheck(catInput({
   reply: { freq: 0 },
   device: { known: false }
 }))
-assert.equal(noDeviceKnown.state, R.FAIL)
+assert.equal(noDeviceKnown.state, R.WARN)
 assert.equal(noDeviceKnown.detail, "no rig reply")
 
 // ---- CAT control: reading rigctld and rigctl ---------------------------
@@ -1135,13 +1136,13 @@ assert.equal(R.timeCheck(R.timeFacts()).state, R.FAIL)
 assert.equal(R.timeCheck(R.timeFacts()).detail, "no time source")
 assert.equal(R.timeFacts().gps.pps, false)
 assert.equal(R.timeFacts().chronyInstalled, true)
-assert.equal(R.catCheck(R.catFacts()).state, R.FAIL)
+assert.equal(R.catCheck(R.catFacts()).state, R.WARN)
 assert.equal(R.catCheck(R.catFacts()).detail, "rigctld down")
 assert.equal(R.catFacts().installed, true)
 assert.equal(R.catFacts().reply.freq, 0)
 
 // The new checks aggregate with the audio one through the same helpers the bar
-// and panel use: one warning, no failure, is amber.
+// and panel use: one reduced check, no failure, is amber.
 const station = {
   time: R.timeCheck(timeInput({ gpsMode: "optional", gps: { gpsd: true, devices: 1, mode: 0 } })),
   cat: R.check(R.OK, "14.074", "MHz · USB", "rigctld · PTT receive"),
@@ -1149,11 +1150,11 @@ const station = {
   tnc: R.notApplicable()
 }
 assert.equal(R.overall(station), R.WARN)
-assert.equal(R.verdict(R.WARN), "Needs attention")
-assert.match(R.verdictDetail(R.WARN, R.counts(station), station, "Host audio"), /1 of 3 checks needs attention/)
+assert.equal(R.verdict(R.WARN), "Ready, reduced capability")
+assert.match(R.verdictDetail(R.WARN, R.counts(station), station, "Host audio"), /1 of 3 checks at reduced capability/)
 assert.equal(R.rows(station)[0].detail, "GPS · no fix")
 assert.equal(R.rows(station)[0].meta, "GPS lost")
-assert.match(R.tooltip(station), /Time sync: Check — GPS · no fix/)
+assert.match(R.tooltip(station), /Time sync: Reduced — GPS · no fix/)
 
 // ---- TNC transport: the holdership ladder (ADR 0005) --------------------
 //
@@ -1463,6 +1464,56 @@ assert.equal(R.tncTransportCursor([], ""), 0)
 assert.equal(
   R.tncTransportRows([], "").filter(function(row) { return row.kind === "clear" }).length,
   0
+)
+
+// ---- CAT-less Host audio: reduced capability, never a fault (ADR 0006) --
+//
+// A manual-dial station with a working audio chain is a real station: it can
+// work every digital mode, tuning by hand. Every CAT rung that cannot prove
+// the link is reduced capability, so the dot settles at amber rather than
+// never reaching green.
+
+const noHamlibCat = R.catCheck(Object.assign(R.catFacts(), { installed: false }))
+const manualDial = {
+  time: R.check(R.OK, "NTP", "GPS mode off", "disciplined"),
+  cat: noHamlibCat,
+  audio: R.check(R.OK, "USB codec", "RX/TX ready", "TX: USB codec"),
+  tnc: R.notApplicable()
+}
+assert.equal(R.overall(manualDial), R.WARN)
+assert.equal(R.verdict(R.overall(manualDial)), "Ready, reduced capability")
+const manualDialRows = R.rows(manualDial)
+assert.equal(manualDialRows[1].readout, "—")
+assert.equal(manualDialRows[1].detail, "no hamlib")
+assert.equal(manualDialRows[1].meta, "install hamlib")
+
+// Both paths declared: a CAT-less Host audio half is reduced, not broken, and
+// the working TNC half stays visible.
+const bothManualDial = stationWith({
+  cat: noHamlibCat,
+  tnc: R.check(R.OK, "/dev/ttyACM0", "port free", "USB CDC")
+})
+assert.equal(R.overall(bothManualDial), R.WARN)
+assert.equal(
+  R.verdictDetail(R.WARN, R.counts(bothManualDial), bothManualDial, "Both"),
+  "Host audio reduced capability · TNC ready"
+)
+
+// A real fault still leads: a failed audio check plus a CAT-less link keeps
+// the failure headline and counts the reduced check beside it.
+const failedAndReduced = {
+  time: R.check(R.OK, "NTP", "GPS mode off", "disciplined"),
+  cat: noHamlibCat,
+  audio: R.audioCheck(audioInput({
+    rx: Object.assign({}, RX, { present: false }),
+    tx: TX
+  })),
+  tnc: R.notApplicable()
+}
+assert.equal(R.overall(failedAndReduced), R.FAIL)
+assert.equal(
+  R.verdictDetail(R.FAIL, R.counts(failedAndReduced), failedAndReduced, "Host audio"),
+  "Host audio not ready · 1 check failed · 1 at reduced capability"
 )
 
 // ---- Settings reference: README agrees with the manifest ----------------

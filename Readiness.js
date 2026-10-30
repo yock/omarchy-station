@@ -42,8 +42,8 @@ var STATES = {
     color: "#73c37a"
   },
   warn: {
-    label: "Needs attention",
-    short: "Check",
+    label: "Reduced capability",
+    short: "Reduced",
     color: "#d9b45f"
   },
   fail: {
@@ -60,7 +60,7 @@ var STATES = {
 
 var VERDICTS = {
   ok: "Station ready",
-  warn: "Needs attention",
+  warn: "Ready, reduced capability",
   fail: "Not ready",
   unknown: "Not probed yet"
 }
@@ -219,7 +219,7 @@ function pathTitle(path) {
 
 function pathWord(state) {
   if (state === OK) return "ready"
-  if (state === WARN) return "needs attention"
+  if (state === WARN) return "reduced capability"
   if (state === FAIL) return "not ready"
   if (state === NA) return "not applicable"
   return "not probed"
@@ -267,8 +267,8 @@ var GPS_MODE_KEY = "gpsMode"
 
 var GPS_MODE_OPTIONS = [
   { value: "Off", consequence: "NTP is enough" },
-  { value: "Optional", consequence: "warn when GPS is lost" },
-  { value: "Required", consequence: "warn when GPS is lost, has no PPS, or is not selected" }
+  { value: "Optional", consequence: "reduced capability when GPS is lost" },
+  { value: "Required", consequence: "reduced capability when GPS is lost, has no PPS, or is not selected" }
 ]
 
 function gpsModeSettingKey() {
@@ -540,6 +540,11 @@ function gpsConfigFacts(value) {
 // device. The rig must answer frequency and mode. Meter readings and PTT tests
 // are never signals; PTT state is read only.
 //
+// ADR 0006: a station with no CAT link is a real station — a manual-dial
+// operator can work every digital mode. Every rung that cannot prove the link
+// is therefore reduced capability (warn), never a fault. A missing rigctl
+// client stays unknown: nothing is known to be broken.
+//
 // `input` is:
 //
 //   installed   the hamlib package is present, so rigctld can run at all
@@ -584,10 +589,10 @@ function catCheck(input) {
   // it was never installed, and "not running" would send the operator after a
   // daemon that is not there. The package is what they have to add.
   if (facts.installed === false)
-    return check(FAIL, "—", "no hamlib", "install hamlib")
+    return check(WARN, "—", "no hamlib", "install hamlib")
 
   if (facts.rigctld !== true)
-    return check(FAIL, "—", "rigctld down", endpoint)
+    return check(WARN, "—", "rigctld down", endpoint)
 
   if (facts.queryable !== true)
     return check(UNKNOWN, "—", "no rigctl", endpoint)
@@ -607,15 +612,15 @@ function catCheck(input) {
   if (device.known === true) {
     var path = text(device.path)
     if (device.present !== true)
-      return check(FAIL, "—", "missing " + path, endpoint)
+      return check(WARN, "—", "missing " + path, endpoint)
     if (device.held !== true && device.access !== true)
-      return check(FAIL, "—", "permission denied", "dialout · " + path)
+      return check(WARN, "—", "permission denied", "dialout · " + path)
     if (device.held !== true && device.busy === true)
-      return check(FAIL, "—", "in use: " + path, "another program")
+      return check(WARN, "—", "in use: " + path, "another program")
   }
 
   var error = text(reply.error)
-  return check(FAIL, "—", "no rig reply", error === "" ? endpoint : error)
+  return check(WARN, "—", "no rig reply", error === "" ? endpoint : error)
 }
 
 function formatFrequency(hz) {
@@ -1362,8 +1367,8 @@ function verdict(state) {
 }
 
 // The verdict always names every declared path. With both declared, the two
-// path phrases keep the working half visible ("Host audio ready · TNC needs
-// attention"); with one declared, the path is named and the counts explain the
+// path phrases keep the working half visible ("Host audio ready · TNC reduced
+// capability"); with one declared, the path is named and the counts explain the
 // state. An undeclared-path hint rides along as text, never as a state.
 function verdictDetail(state, counts, snapshot, stationPaths, hint) {
   var declaration = stationPaths === undefined ? STATION_PATH_DEFAULT : stationPaths
@@ -1384,15 +1389,15 @@ function verdictDetail(state, counts, snapshot, stationPaths, hint) {
   var total = totalCount(counts)
   if (state === FAIL) {
     var attention = counts.attention > 0
-      ? " · " + counts.attention + (counts.attention === 1 ? " needs attention" : " need attention")
+      ? " · " + counts.attention + " at reduced capability"
       : ""
     return pathTitle(path) + " not ready · "
       + counts.blocked + (counts.blocked === 1 ? " check failed" : " checks failed")
       + attention + suffix
   }
   if (state === WARN) {
-    return pathTitle(path) + ": " + counts.attention + " of " + total + " checks "
-      + (counts.attention === 1 ? "needs" : "need") + " attention" + suffix
+    return pathTitle(path) + ": " + counts.attention + " of " + total
+      + " checks at reduced capability" + suffix
   }
   return pathTitle(path) + " not probed yet" + suffix
 }

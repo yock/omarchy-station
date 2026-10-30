@@ -65,7 +65,7 @@
           "Required"
         ],
         "defaultValue": "Off",
-        "description": "Off: no GPS, NTP is enough. Optional: GPS is configured, so losing it warns but a fix without PPS or an unselected fix stays green. Required: losing it, a fix without PPS or an unselected fix all warn."
+        "description": "Off: no GPS, NTP is enough. Optional: GPS is configured, so losing it is reduced capability but a fix without PPS or an unselected fix stays green. Required: losing it, a fix without PPS or an unselected fix are all reduced capability."
       },
       {
         "key": "stationPaths",

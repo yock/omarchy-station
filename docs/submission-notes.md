@@ -63,4 +63,4 @@ tag.
 > Station readiness for digital-mode operators: time sync, CAT control, radio
 > audio and TNC transport at a glance, with a green/amber/red bar indicator.
 > One drawn station glyph and a status dot; the panel names whichever half of
-> the station needs attention.
+> the station is at reduced capability.

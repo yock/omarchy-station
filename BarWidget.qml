@@ -6,7 +6,8 @@ import "Readiness.js" as Readiness
 
 // Station readiness in the bar: one station glyph plus a small status dot.
 // The dot is always present; grey means "not probed yet", green means all
-// checks are ready, amber means attention, red means the station is not ready.
+// checks are ready, amber means reduced capability, red means the station is
+// not ready.
 //
 // The probe layer replaces `readiness` as a whole. Keeping one snapshot object
 // means the bar, tooltip and panel cannot disagree mid-update.
