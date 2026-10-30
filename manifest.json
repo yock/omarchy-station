@@ -42,6 +42,8 @@
       "refreshIntervalSec": 5,
       "gpsMode": "Off",
       "stationPaths": "Host audio",
+      "radioRxNode": "",
+      "radioTxNode": "",
       "tncTransport": ""
     },
     "schema": [
